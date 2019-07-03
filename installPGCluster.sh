@@ -44,7 +44,7 @@ function checkCommandStatus(){
 
 function helpFunction(){
    echo ""
-   echo "Usage: $0 ${RED}-n${NORMAL} ROOT_USER_PASS ${RED}-p${NORMAL} IP_LIST_OF_CLUSTER ${RED}-s${NORMAL} SCOPE_NAME ${GREEN}-d${NORMAL} DATA_DISK_PATH ${GREEN}-w${NORMAL} WAL_DISK_PATH ${GREEN}-e${NORMAL} DCS_ROOT_PATH ${GREEN}-b${NORMAL} HA_PROXY_IP ${GREEN}-v${NORMAL} ON"
+   echo "Usage: $0 ${RED}-n${NORMAL} ROOT_USER_PASS ${RED}-p${NORMAL} IP_LIST_OF_CLUSTER ${RED}-s${NORMAL} SCOPE_NAME ${GREEN}-d${NORMAL} DATA_DISK_PATH ${GREEN}-w${NORMAL} WAL_DISK_PATH ${GREEN}-e${NORMAL} DCS_ROOT_PATH ${GREEN}-k${NORMAL}PG_PORT ${GREEN}-v${NORMAL} ON"
    echo -e "\t-n required- root user password. Remember all machines have to have SAME root password. You can change passwords or disable root login recommended after installation finished."
    echo -e "\t-p required- IP list of cluster. Comma seperated IP list e.g : 192.168.1.1,192.168.1.2,192.168.1.3"
    echo -e "\t-s required- Scope Name e.g : PROD_CLS max 10 Alphetic charecter[a-Z]"
