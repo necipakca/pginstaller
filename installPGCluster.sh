@@ -19,6 +19,10 @@ DSC_ROOT_PATH=
 VERBOSE=
 PG_PORT=
 RUN_LEVEL=
+ETCD_PASSWORD=
+REPLICATION_USER_PASSWORD=
+PG_SUPER_USER_PASSWORD=
+
 
 banner(){
   echo "+----------------------------------------------------+"
@@ -56,6 +60,9 @@ function helpFunction(){
    echo -e "\t-w optinal- WAL  disk path e.g : /dev/sdc"
    echo -e "\t-e optinal- DCS root directory path. e.g. PG11_PROD_CLS.if you not provide default value is  PG_+ Scope Name"
    echo -e "\t-v optinal- More output default for open add : -v:ON "
+   echo -e "\t-g optinal- Etcd Password"
+   echo -e "\t-t optinal- Postgres Replication User Password"
+   echo -e "\t-y optinal- Postgres Super User(postgres) Password"
 
    exit -900 # Exit script after printing help
 }
@@ -64,7 +71,7 @@ function check_program_exist(){
   command -v "$1" >/dev/null 2>&1
 }
 
-while getopts 'n:p:s:d:w:e:v:k:x:' OPTION; do
+while getopts 'n:p:s:d:w:e:v:k:x:g:t:y:' OPTION; do
   case "$OPTION" in
     n)
       OS_ROOT_PASSWORD="$OPTARG"
@@ -93,6 +100,15 @@ while getopts 'n:p:s:d:w:e:v:k:x:' OPTION; do
     x)
       RUN_LEVEL="$OPTARG"
       ;;
+    g)
+      ETCD_PASSWORD="$OPTARG"
+      ;;
+    t)
+      REPLICATION_USER_PASSWORD="$OPTARG"
+      ;;
+    y)
+      PG_SUPER_USER_PASSWORD="$OPTARG"
+      ;;
     ?)
       helpFunction
       ;;
@@ -107,10 +123,28 @@ if [[ -z ${OS_ROOT_PASSWORD} ]] || [[ -z ${IP_LIST_OF_CLUSTER} ]] || [[ -z ${SCO
    helpFunction
 fi
 
+
+# Initialize Default Required params if not supplied
 if [[ -z ${PG_PORT} ]] ;then
    checkCommandStatus "PostgreSQL port : 5432"
    PG_PORT="5432"
 fi
+
+if [[ -z ${ETCD_PASSWORD} ]] ;then
+   ETCD_PASSWORD=$(date +%s | sha256sum | base64 | head -c 32)
+   checkCommandStatus "${RED}ETCD_PASSWORD password generated please note this:${NORMAL} ${ETCD_PASSWORD}"
+fi
+
+if [[ -z ${REPLICATION_USER_PASSWORD} ]] ;then
+   REPLICATION_USER_PASSWORD=$(date +%s | sha256sum | base64 | head -c 32)
+   checkCommandStatus "${RED}REPLICATION_USER_PASSWORD password generated please note this:${NORMAL} ${REPLICATION_USER_PASSWORD}"
+fi
+
+if [[ -z ${PG_SUPER_USER_PASSWORD} ]] ;then
+   PG_SUPER_USER_PASSWORD=$(date +%s | sha256sum | base64 | head -c 32)
+   checkCommandStatus "${RED}PG_SUPER_USER_PASSWORD password generated please note this:${NORMAL} ${PG_SUPER_USER_PASSWORD}"
+fi
+
 
 handle_eco(){
     if [[ "${VERBOSE}" == "ON" ]]
@@ -234,7 +268,7 @@ validate_disks(){
 
 
     if [[ -z ${WAL_PATH} ]]; then
-        echo ${IP} ":   ""${YELLOW}INFO:${NORMAL} WAL disk not not provided.It is recommended to seperate OS/DATA/WAL disks to different LUN.Data dir will be default.  /pg_${SCOPE_NAME}/mounts/wal_m/"
+        echo ${IP} ":   ""${YELLOW}INFO:${NORMAL} WAL disk not not provided.It is recommended to seperate OS/DATA/WAL disks to different LUN.WAL dir will be default.  /pg_${SCOPE_NAME}/mounts/wal_m/"
     else
         check_disk_mount_status "$1" "$WAL_PATH"
         WAL_DISK_SIZE=$(get_disk_size "$1" "$WAL_PATH")
@@ -363,13 +397,18 @@ FileSystemUtil(){
 
 CentOsPacksInstallerAndKernel(){
 
+    systemctl enable ntpdate.service
+    checkCommandStatus "Enable ntpdate service"
+    systemctl start ntpdate.service
+    checkCommandStatus "Start ntpdate service"
+
     yum install epel-release -y  >&-
     checkCommandStatus "Enable epel-release repo"
 
     yum update -y  >&-
     checkCommandStatus "Updating CentOS packs"
 
-    yum install gcc rsync -y  >&-
+    yum install gcc rsync telnet -y  >&-
     checkCommandStatus "gcc"
 
     yum -y install python python-devel libyaml  >&-
@@ -458,25 +497,48 @@ CentOsPacksInstallerAndKernel(){
     }
 
     create_disabler_and_activate(){
+        echo '[Unit]
+        Description=Disable Transparent Huge Pages (THP)
+        Before='"patroni_${SCOPE_NAME}.service"'
 
-    echo '[Unit]
-    Description=Disable Transparent Huge Pages (THP)
-    Before='"patroni_${SCOPE_NAME}.service"'
+        [Service]
+        Type=notify
 
-    [Service]
-    Type=notify
+        ExecStart=/bin/bash -c '"'"'echo never > /sys/kernel/mm/transparent_hugepage/enabled && echo never > /sys/kernel/mm/transparent_hugepage/defrag; while true; do grep -q "\[never\]" /sys/kernel/mm/transparent_hugepage/enabled; check1=$?; grep -q "\[never\]" /sys/kernel/mm/transparent_hugepage/defrag; check2=$?; if (( check1 + check2 )); then echo waiting; sleep 1; else echo succeed; break; fi done; /bin/systemd-notify --ready'"'"'
 
-    ExecStart=/bin/bash -c '"'"'echo never > /sys/kernel/mm/transparent_hugepage/enabled && echo never > /sys/kernel/mm/transparent_hugepage/defrag; while true; do grep -q "\[never\]" /sys/kernel/mm/transparent_hugepage/enabled; check1=$?; grep -q "\[never\]" /sys/kernel/mm/transparent_hugepage/defrag; check2=$?; if (( check1 + check2 )); then echo waiting; sleep 1; else echo succeed; break; fi done; /bin/systemd-notify --ready'"'"'
+        RemainAfterExit=true
 
-    RemainAfterExit=true
+        [Install]
+        WantedBy=multi-user.target' > /etc/systemd/system/postgresql-thp-disabler.service
 
-    [Install]
-    WantedBy=multi-user.target' > /etc/systemd/system/postgresql-thp-disabler.service
+        systemctl enable postgresql-thp-disabler
+        systemctl start postgresql-thp-disabler
 
-    systemctl enable postgresql-thp-disabler
-    systemctl start postgresql-thp-disabler
+        checkCommandStatus "postgresql-thp-disabler added to services"
 
-    checkCommandStatus "postgresql-thp-disabler added to services"
+    }
+
+    create_watchdog_and_activate(){
+        echo '[Unit]
+Description=Makes kernel watchdog device available for Patroni
+
+[Service]
+Type=oneshot
+
+Environment=WATCHDOG_MODULE=softdog
+Environment=WATCHDOG_DEVICE=/dev/watchdog
+Environment=PATRONI_USER=postgres
+
+ExecStart=/usr/sbin/modprobe ${WATCHDOG_MODULE}
+ExecStart=/bin/chown ${PATRONI_USER} ${WATCHDOG_DEVICE}
+
+[Install]
+WantedBy=multi-user.target' > /etc/systemd/system/watchdog.service
+
+        systemctl enable watchdog.service
+        systemctl start watchdog.service
+
+        checkCommandStatus "watchdog.service added to services"
 
     }
 
@@ -503,29 +565,6 @@ CentOsPacksInstallerAndKernel(){
         grep -q -F 'postgres    nproc  131072' /etc/security/limits.conf  || echo 'postgres    	hard    nproc  131072' >> /etc/security/limits.conf
 
         checkCommandStatus "limits.conf adjusting"
-    }
-
-    adjust_firewall(){
-
-       systemctl stop firewalld
-       systemctl disable firewalld
-
-    #   local IFS=.
-    #   read -r i1 i2 i3 i4 <<< "${IP}"
-    #   read -r m1 m2 m3 m4 <<< "255.255.255.0"
-    #   local NETWORK="$((i1 & m1)).$((i2 & m2)).$((i3 & m3)).$((i4 & m4))"
-    #   checkCommandStatus "firewalld settings adjusting accept connections from ${NETWORK} (2379,5432)"
-    #
-    #    # Etcd
-    #    firewall-cmd --permanent --zone="home" --add-source="${NETWORK}/32" >&-
-    #    firewall-cmd --permanent --zone="home" --add-source="127.0.0.1/32" >&-
-    #    firewall-cmd --permanent --add-port=2379/tcp --zone=home >&-
-    #    firewall-cmd --permanent --add-port=2380/tcp --zone=home >&-
-    #    firewall-cmd --permanent --add-port=5432/tcp --zone=home >&-
-    #
-    #    firewall-cmd --reload >&-
-    #    systemctl restart firewalld >&-
-
     }
 
     setup_disks(){
@@ -559,10 +598,19 @@ CentOsPacksInstallerAndKernel(){
 
     }
 
+    enable_firewall(){
+       systemctl enable firewalld
+       checkCommandStatus "Enable firewalld"
+       systemctl start firewalld
+       checkCommandStatus "Start firewalld"
+
+    }
+
+    enable_firewall;
     create_tuned_profile_and_activate;
     create_disabler_and_activate;
+    create_watchdog_and_activate;
     adjust_sysctl_and_limits;
-    adjust_firewall ;
     setup_disks;
 }
 
@@ -573,6 +621,19 @@ EtcdInstaller(){
             etcdctl cluster-health
 ENDSSH
     }
+
+    adjust_firewall_etcd(){
+          for i in "${!LIST[@]}"
+          do
+                FIREWALL_SERVER_IP=${LIST[$i]}
+                ssh -q -oStrictHostKeyChecking=no root@${SERVER_IP} FIREWALL_SERVER_IP=${FIREWALL_SERVER_IP} 2>> installPGCluster.log SERVER_IP=${SERVER_IP} 'bash -s' <<-'ENDSSH'
+                firewall-cmd --permanent --zone=public --add-rich-rule="rule family=ipv4 source address=${FIREWALL_SERVER_IP}/32 port protocol=tcp port=2380 accept"  >&-
+                firewall-cmd --permanent --zone=public --add-rich-rule="rule family=ipv4 source address=${FIREWALL_SERVER_IP}/32 port protocol=tcp port=2379 accept"  >&-
+ENDSSH
+          done
+    }
+
+
 
     start_setup_etcd() {
       local IFS=,
@@ -590,6 +651,7 @@ ENDSSH
               ETCD_INITIAL_CLUSTER="${ETCD_INITIAL_CLUSTER},"
        fi
        ETCD_INITIAL_CLUSTER=${ETCD_INITIAL_CLUSTER}${NAME}"=http://"${SERVER_IP}":2380"
+       adjust_firewall_etcd ${SERVER_IP}
       done
 
 
@@ -647,7 +709,6 @@ ENDSSH
             fi
 ENDSSH
 
-
       done
 
       for i in "${!LIST[@]}"
@@ -665,6 +726,10 @@ ENDSSH
                     exit -901
                 fi
             }
+
+            firewall-cmd --reload >&-
+            systemctl restart firewalld >&-
+
             systemctl enable etcd
             systemctl start etcd &
             checkCommandStatus "Starting etcd ..."
@@ -678,6 +743,35 @@ ENDSSH
 
     start_setup_etcd ${IP_LIST_OF_CLUSTER}
 
+    ETCDCTL_API=3 etcdctl user add root:${ETCD_PASSWORD}
+    ETCDCTL_API=3 etcdctl auth enable
+    ETCDCTL_API=3 etcdctl --endpoints=http://127.0.0.1:2379 -u root:${ETCD_PASSWORD} role remove guest
+
+    ETCDCTL_API=2 etcdctl user add root:${ETCD_PASSWORD}
+    ETCDCTL_API=2 etcdctl auth enable
+    ETCDCTL_API=2 etcdctl --endpoints=http://127.0.0.1:2379 -u root:${ETCD_PASSWORD} role remove guest
+
+    for i in "${!LIST[@]}"
+      do
+       SERVER_ORDER_NUMBER=$(echo $(( ${i}+1 )))
+       NAME="etcd"${SERVER_ORDER_NUMBER}
+       SERVER_IP=${LIST[$i]}
+
+       ssh -oStrictHostKeyChecking=no root@"${SERVER_IP}" SERVER_IP=${SERVER_IP} 2>> installPGCluster.log 'bash -s' <<-'ENDSSH'
+            checkCommandStatus(){
+                if [[ $? -eq 0 ]]; then
+                    echo "${SERVER_IP} :$1..etcd_install....."${GREEN}"OK${NORMAL}";
+                else
+                    echo "${SERVER_IP} :$1..etcd_install....."${RED}"FAILED_"$?"${NORMAL}";
+                    exit -901
+                fi
+            }
+            systemctl restart etcd &
+            checkCommandStatus "Restarting etcd ..."
+ENDSSH
+
+      done
+
     for i in "${!LIST[@]}"
     do
        SERVER_IP=${LIST[$i]}
@@ -689,7 +783,9 @@ ENDSSH
 
 create_master_template(){
 
-    ssh -oStrictHostKeyChecking=no root@${1} SERVER_IP=${1} SCOPE_NAME=${2} PG_PORT=${PG_PORT} 2>> installPGCluster.log 'bash -s' <<-'ENDSSH'
+    ${ETCD_PASSWORD}
+
+    ssh -oStrictHostKeyChecking=no root@${1} SERVER_IP=${1} SCOPE_NAME=${2} PG_PORT=${PG_PORT}  ETCD_PASSWORD=${ETCD_PASSWORD} 2>> installPGCluster.log 'bash -s' <<-'ENDSSH'
  echo 'scope: SCOPE_NAME
 namespace: NAME_SPACE
 name: NAME_OF_INSTANCE
@@ -709,7 +805,12 @@ restapi:
 #   cacert: /etc/ssl/certs/ssl-cacert-snakeoil.pem
 
 etcd:
+    use_proxies: false
     hosts: ETCD_INITIAL_CLUSTER
+    protocol: http
+    username: root
+    password: ETCD_PASSWORD
+
 
 bootstrap:
   # this section will be written into Etcd:/<namespace>/<scope>/config after initializing new cluster
@@ -776,13 +877,13 @@ postgresql:
   authentication:
     replication:
       username: replicator
-      password: 4fabb144871151
+      password: REPLICATION_USER_PASSWORD
     superuser:
       username: postgres
-      password: postgres
+      password: PG_SUPER_USER_PASSWORD
     rewind:  # Has no effect on postgres 10 and lower
       username: rewind_prod
-      password: 4fabb144871151
+      password: PG_SUPER_USER_PASSWORD
   # Server side kerberos spn
 #  krbsrvname: postgres
   parameters:
@@ -816,6 +917,17 @@ ENDSSH
 )
         }
 
+        adjust_firewallPatroni(){
+          for i in "${!LIST[@]}"
+          do
+                FIREWALL_SERVER_IP=${LIST[$i]}
+                ssh -q -oStrictHostKeyChecking=no root@${SERVER_IP} FIREWALL_SERVER_IP=${FIREWALL_SERVER_IP} 2>> installPGCluster.log SERVER_IP=${SERVER_IP} PG_PORT=${PG_PORT} 'bash -s' <<-'ENDSSH'
+                firewall-cmd --permanent --zone=public --add-rich-rule="rule family=ipv4 source address=${FIREWALL_SERVER_IP}/32 port protocol=tcp port=8008 accept"  >&-
+                firewall-cmd --permanent --zone=public --add-rich-rule="rule family=ipv4 source address=${FIREWALL_SERVER_IP}/32 port protocol=tcp port=${PG_PORT} accept"  >&-
+ENDSSH
+          done
+        }
+
         start_setup_patroni() {
           local IFS=,
           local LIST=(${IP_LIST_OF_CLUSTER})
@@ -826,11 +938,12 @@ ENDSSH
           for i in "${!LIST[@]}"
           do
            SERVER_ORDER_NUMBER=$(echo $(( ${i}+1 )))
-           SERVER_IP=${LIST[$i]}
+           local SERVER_IP=${LIST[$i]}
            if [[ ${i} != 0 ]]; then
                   ETCD_INITIAL_CLUSTER="${ETCD_INITIAL_CLUSTER},"
            fi
            ETCD_INITIAL_CLUSTER=${ETCD_INITIAL_CLUSTER}${SERVER_IP}":2379"
+           adjust_firewallPatroni
           done
 
 
@@ -850,8 +963,7 @@ ENDSSH
            create_master_template ${SERVER_IP} ${SCOPE_NAME}
            checkCommandStatus "Patroni create template conf to ${SERVER_IP} "
 
-
-           ssh -oStrictHostKeyChecking=no root@"${SERVER_IP}"  NAME=${NAME} SERVER_IP=${SERVER_IP} SCOPE_NAME=${SCOPE_NAME} NAMESPACE=${DSC_ROOT_PATH} ETCD_INITIAL_CLUSTER="${ETCD_INITIAL_CLUSTER}" WAL_PATH="/pg_${SCOPE_NAME}/mounts/wal_m/wal" DATA_PATH="/pg_${SCOPE_NAME}/mounts/data_m/data" PG_BIN_DIR="/usr/pgsql-11/bin" PG_PORT=${PG_PORT} 'bash -s' <<-'ENDSSH'
+           ssh -oStrictHostKeyChecking=no root@"${SERVER_IP}"  NAME=${NAME} SERVER_IP=${SERVER_IP} SCOPE_NAME=${SCOPE_NAME} NAMESPACE=${DSC_ROOT_PATH} ETCD_INITIAL_CLUSTER="${ETCD_INITIAL_CLUSTER}" WAL_PATH="/pg_${SCOPE_NAME}/mounts/wal_m/wal" DATA_PATH="/pg_${SCOPE_NAME}/mounts/data_m/data" PG_BIN_DIR="/usr/pgsql-11/bin" PG_PORT=${PG_PORT} ETCD_PASSWORD=${ETCD_PASSWORD} 'bash -s' <<-'ENDSSH'
 
                 check_program_exist()
                 {
@@ -885,6 +997,10 @@ ENDSSH
                 sed -i -e 's#PG_DATA_DIR#'"${DATA_PATH}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
                 sed -i -e 's#PG_BIN_DIR#'"${PG_BIN_DIR}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
                 sed -i -e 's#PG_PORT#'"${PG_PORT}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+                sed -i -e 's#ETCD_PASSWORD#'"${ETCD_PASSWORD}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+                sed -i -e 's#REPLICATION_USER_PASSWORD#'"${REPLICATION_USER_PASSWORD}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+                sed -i -e 's#PG_SUPER_USER_PASSWORD#'"${PG_SUPER_USER_PASSWORD}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+
 
                 echo '# This is an example systemd config file for Patroni
         # You can copy it to "/etc/systemd/system/patroni.service",
@@ -931,10 +1047,15 @@ ENDSSH
         [Install]
         WantedBy=multi-user.target' > /etc/systemd/system/patroni_${SCOPE_NAME}.service
 
+        firewall-cmd --reload >&-
+        systemctl restart firewalld >&-
+
         systemctl enable patroni_${SCOPE_NAME}.service
         systemctl start patroni_${SCOPE_NAME}.service
         checkCommandStatus "Patroni Start"
 ENDSSH
+
+
 
 
 
@@ -968,8 +1089,8 @@ cent_os_env_installer() {
 
     banner "$IP CentOS Package and Kernel started."
 
-    ssh -oStrictHostKeyChecking=no root@"${IP}" IP=${IP} SCOPE_NAME=${SCOPE_NAME} DATA_PATH=${DATA_PATH} WAL_PATH=${WAL_PATH} DSC_ROOT_PATH=${DSC_ROOT_PATH} PG_PORT=${PG_PORT} 2>> installPGCluster.log 'bash -s' <<-'ENDSSH'
-    /root/installPGCluster -n "NOT_NEED" -p "NOT_NEED" -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -x 1
+    ssh -oStrictHostKeyChecking=no root@"${IP}" IP=${IP} SCOPE_NAME=${SCOPE_NAME} DATA_PATH=${DATA_PATH} WAL_PATH=${WAL_PATH} DSC_ROOT_PATH=${DSC_ROOT_PATH} PG_PORT=${PG_PORT} ETCD_PASSWORD=${ETCD_PASSWORD} REPLICATION_USER_PASSWORD=${REPLICATION_USER_PASSWORD} PG_SUPER_USER_PASSWORD=${PG_SUPER_USER_PASSWORD} 2>> installPGCluster.log 'bash -s' <<-'ENDSSH'
+    /root/installPGCluster -n "NOT_NEED" -p "NOT_NEED" -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -g ${ETCD_PASSWORD} -t ${REPLICATION_USER_PASSWORD} -y ${PG_SUPER_USER_PASSWORD} -x 1
     if [[ $? -eq 0 ]]; then
             echo "system..install....."${GREEN}"OK${NORMAL}";
         else
@@ -982,9 +1103,9 @@ ENDSSH
   done
 
 
-  /root/installPGCluster -n "NOT_NEED" -p ${IP_LIST_OF_CLUSTER} -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -x 2
+  /root/installPGCluster -n "NOT_NEED" -p ${IP_LIST_OF_CLUSTER} -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -g ${ETCD_PASSWORD}  -t ${REPLICATION_USER_PASSWORD} -y ${PG_SUPER_USER_PASSWORD} -x 2
   checkCommandStatus
-  /root/installPGCluster -n "NOT_NEED" -p ${IP_LIST_OF_CLUSTER} -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -x 3
+  /root/installPGCluster -n "NOT_NEED" -p ${IP_LIST_OF_CLUSTER} -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -g ${ETCD_PASSWORD}  -t ${REPLICATION_USER_PASSWORD} -y ${PG_SUPER_USER_PASSWORD} -x 3
   checkCommandStatus
 
 }
