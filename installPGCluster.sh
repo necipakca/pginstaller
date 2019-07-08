@@ -37,6 +37,10 @@ bannerWithoutTime(){
   echo "+----------------------------------------------------+"
 }
 
+bannerWithoutTime "PosgreSQL  11  HA  Cluster  Installer"
+bannerWithoutTime "© All Rights Reserved by TURKSAT A.S."
+
+
 function checkCommandStatus(){
     if [[ $? -eq 0 ]]; then
         echo $1 "......"${GREEN}"OK${NORMAL}";
@@ -48,7 +52,7 @@ function checkCommandStatus(){
 
 function helpFunction(){
    echo ""
-   echo "Usage: $0 ${RED}-n${NORMAL} ROOT_USER_PASS ${RED}-p${NORMAL} IP_LIST_OF_CLUSTER ${RED}-s${NORMAL} SCOPE_NAME ${GREEN}-d${NORMAL} DATA_DISK_PATH ${GREEN}-w${NORMAL} WAL_DISK_PATH ${GREEN}-e${NORMAL} DCS_ROOT_PATH ${GREEN}-k${NORMAL}PG_PORT ${GREEN}-v${NORMAL} ON"
+   echo "Usage: $0 ${RED}-n${NORMAL} ROOT_USER_PASS ${RED}-p${NORMAL} IP_LIST_OF_CLUSTER ${RED}-s${NORMAL} SCOPE_NAME ${GREEN}-d${NORMAL} DATA_DISK_PATH ${GREEN}-w${NORMAL} WAL_DISK_PATH ${GREEN}-e${NORMAL} DCS_ROOT_PATH ${GREEN}-k${NORMAL}PG_PORT ${GREEN}-g${NORMAL}ETCD_PASS ${GREEN}-t${NORMAL}REPLICATIN_USER_PASS ${GREEN}-y${NORMAL}SUPER_USER_PASS ${GREEN}-v${NORMAL} ON"
    echo -e "\t-n required- root user password. Remember all machines have to have SAME root password. You can change passwords or disable root login recommended after installation finished."
    echo -e "\t-p required- IP list of cluster. Comma seperated IP list e.g : 192.168.1.1,192.168.1.2,192.168.1.3"
    echo -e "\t-s required- Scope Name e.g : PROD_CLS max 10 Alphetic charecter[a-Z]"
@@ -131,18 +135,22 @@ if [[ -z ${PG_PORT} ]] ;then
 fi
 
 if [[ -z ${ETCD_PASSWORD} ]] ;then
-   ETCD_PASSWORD=$(date +%s | sha256sum | base64 | head -c 32)
+   ETCD_PASSWORD=$(head /dev/urandom | tr -dc A-Z0-9 | head -c 8)
+   echo
    checkCommandStatus "${RED}ETCD_PASSWORD password generated please note this:${NORMAL} ${ETCD_PASSWORD}"
 fi
 
 if [[ -z ${REPLICATION_USER_PASSWORD} ]] ;then
-   REPLICATION_USER_PASSWORD=$(date +%s | sha256sum | base64 | head -c 32)
+   REPLICATION_USER_PASSWORD=$(head /dev/urandom | tr -dc A-Z0-9 | head -c 8)
+   echo
    checkCommandStatus "${RED}REPLICATION_USER_PASSWORD password generated please note this:${NORMAL} ${REPLICATION_USER_PASSWORD}"
 fi
 
 if [[ -z ${PG_SUPER_USER_PASSWORD} ]] ;then
-   PG_SUPER_USER_PASSWORD=$(date +%s | sha256sum | base64 | head -c 32)
+   PG_SUPER_USER_PASSWORD=$(head /dev/urandom | tr -dc A-Z0-9 | head -c 8)
+   echo
    checkCommandStatus "${RED}PG_SUPER_USER_PASSWORD password generated please note this:${NORMAL} ${PG_SUPER_USER_PASSWORD}"
+   echo
 fi
 
 
@@ -444,8 +452,15 @@ CentOsPacksInstallerAndKernel(){
 
 
     create_tuned_profile_and_activate(){
-        mkdir -p /etc/tuned/postgresql-tuned
-        echo '[main]
+
+
+    page_size=$( getconf PAGE_SIZE )
+    phys_pages=$(getconf _PHYS_PAGES )
+    shmall=$( expr $phys_pages / 2)
+    shmmax=$( expr $shmall \* $page_size)
+
+    mkdir -p /etc/tuned/postgresql-tuned
+    echo '[main]
     include = throughput-performance
     summary = For excellent PostgreSQL database workload performance
 
@@ -453,8 +468,8 @@ CentOsPacksInstallerAndKernel(){
     readahead = 4096
 
     [sysctl]
-    # kernel.shmmax = x
-    # kernel.shmall = x
+    kernel.shmmax = '"${shmmax}"'
+    kernel.shmall = '"${shmall}"'
     kernel.shmmni = 4096
     kernel.sem = 512 64000 100 2048
 
@@ -744,12 +759,18 @@ ENDSSH
     start_setup_etcd ${IP_LIST_OF_CLUSTER}
 
     ETCDCTL_API=3 etcdctl user add root:${ETCD_PASSWORD}
+    checkCommandStatus "etcd 3 add user"
     ETCDCTL_API=3 etcdctl auth enable
-    ETCDCTL_API=3 etcdctl --endpoints=http://127.0.0.1:2379 -u root:${ETCD_PASSWORD} role remove guest
+    checkCommandStatus "etcd 3 enable auth"
+    ETCDCTL_API=3 etcdctl --endpoints=http://127.0.0.1:2379 --user="root:${ETCD_PASSWORD}" role remove guest >&-
+    checkCommandStatus "etcd 3 remove roles"
 
     ETCDCTL_API=2 etcdctl user add root:${ETCD_PASSWORD}
+    checkCommandStatus "etcd 2 add user"
     ETCDCTL_API=2 etcdctl auth enable
-    ETCDCTL_API=2 etcdctl --endpoints=http://127.0.0.1:2379 -u root:${ETCD_PASSWORD} role remove guest
+    checkCommandStatus "etcd 2 enable auth"
+    ETCDCTL_API=2 etcdctl --endpoints=http://127.0.0.1:2379 --u "root:${ETCD_PASSWORD}" role remove guest
+    checkCommandStatus "etcd 2 remove roles"
 
     for i in "${!LIST[@]}"
       do
@@ -1059,6 +1080,7 @@ ENDSSH
 
 
 
+
         done
 
 
@@ -1117,10 +1139,6 @@ if [[ -f "/etc/centos-release" ]]; then
     checkCommandStatus "RUN_LEVEL ... ${RUN_LEVEL}"
 
     if [[ -z ${RUN_LEVEL} ]] ;then
-        bannerWithoutTime "PosgreSQL  11  HA  Cluster  Installer"
-        bannerWithoutTime "## YAZILIM GELISTIRME DIREKTORLUGU ##"
-        bannerWithoutTime "© All Rights Reserved by TURKSAT A.S."
-
         validate_env "${IP_LIST_OF_CLUSTER}"
         checkCommandStatus
         cent_os_env_installer "${IP_LIST_OF_CLUSTER}"
