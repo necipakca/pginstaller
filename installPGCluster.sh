@@ -22,6 +22,7 @@ RUN_LEVEL=
 ETCD_PASSWORD=
 REPLICATION_USER_PASSWORD=
 PG_SUPER_USER_PASSWORD=
+PG_BACKREST_USER_PASSWORD=
 
 
 banner(){
@@ -36,9 +37,6 @@ bannerWithoutTime(){
   printf "|`tput bold` %-50s `tput sgr0`|\n" "$@"
   echo "+----------------------------------------------------+"
 }
-
-bannerWithoutTime "PosgreSQL  11  HA  Cluster  Installer"
-bannerWithoutTime "© All Rights Reserved by TURKSAT A.S."
 
 
 function checkCommandStatus(){
@@ -67,6 +65,7 @@ function helpFunction(){
    echo -e "\t-g optinal- Etcd Password"
    echo -e "\t-t optinal- Postgres Replication User Password"
    echo -e "\t-y optinal- Postgres Super User(postgres) Password"
+   echo -e "\t-u optinal- pgBackRest User(pgbackrest) Password"
 
    exit -900 # Exit script after printing help
 }
@@ -75,7 +74,7 @@ function check_program_exist(){
   command -v "$1" >/dev/null 2>&1
 }
 
-while getopts 'n:p:s:d:w:e:v:k:x:g:t:y:' OPTION; do
+while getopts 'n:p:s:d:w:e:v:k:x:g:t:y:u:' OPTION; do
   case "$OPTION" in
     n)
       OS_ROOT_PASSWORD="$OPTARG"
@@ -113,6 +112,9 @@ while getopts 'n:p:s:d:w:e:v:k:x:g:t:y:' OPTION; do
     y)
       PG_SUPER_USER_PASSWORD="$OPTARG"
       ;;
+    u)
+      PG_BACKREST_USER_PASSWORD="$OPTARG"
+      ;;
     ?)
       helpFunction
       ;;
@@ -133,7 +135,7 @@ if [[ -z ${PG_PORT} ]] ;then
    checkCommandStatus "PostgreSQL port : 5432"
    PG_PORT="5432"
 fi
-
+rm -rf PgInstallerPass.txt
 if [[ -z ${ETCD_PASSWORD} ]] ;then
    ETCD_PASSWORD=$(head /dev/urandom | tr -dc A-Z0-9 | head -c 8)
    echo
@@ -152,6 +154,20 @@ if [[ -z ${PG_SUPER_USER_PASSWORD} ]] ;then
    checkCommandStatus "${RED}PG_SUPER_USER_PASSWORD password generated please note this:${NORMAL} ${PG_SUPER_USER_PASSWORD}"
    echo
 fi
+
+if [[ -z ${PG_BACKREST_USER_PASSWORD} ]] ;then
+   PG_BACKREST_USER_PASSWORD=$(head /dev/urandom | tr -dc A-Z0-9 | head -c 8)
+   echo
+   checkCommandStatus "${RED}pgbackrest user password generated please note this:${NORMAL} ${PG_BACKREST_USER_PASSWORD}"
+   echo
+fi
+
+
+echo "etcd root pass :"${ETCD_PASSWORD} > PgInstallerPass.txt
+echo "pg replica_user pass :"${REPLICATION_USER_PASSWORD} >> PgInstallerPass.txt
+echo "pg postgres super user  pass :"${PG_SUPER_USER_PASSWORD} >> PgInstallerPass.txt
+echo "postgres CentOS user pass :"${PG_SUPER_USER_PASSWORD} >> PgInstallerPass.txt
+echo "pgbackrest CentOS user pass :"${PG_SUPER_USER_PASSWORD} >> PgInstallerPass.txt
 
 
 handle_eco(){
@@ -183,9 +199,46 @@ install_ssh_id(){
         checkCommandStatus "RSA generate"
     fi
 
-    sshpass -p "$OS_ROOT_PASSWORD" ssh-copy-id -o StrictHostKeyChecking=no root@$1 2>> installPGCluster.log
+    sshpass -p "$OS_ROOT_PASSWORD" ssh-copy-id -o StrictHostKeyChecking=no root@$1 &>> installPGCluster.log
     checkCommandStatus "ssh-copy-id"
+
 }
+
+install_ssh_id_to_all_servers(){
+
+    if check_program_exist ssh-keygen; then
+        checkCommandStatus "ssh-keygen"
+    else
+        sudo yum install ssh-keygen -y  >&-
+        checkCommandStatus "ssh-keygen"
+    fi
+
+    if check_program_exist sshpass; then
+        checkCommandStatus "sshpass"
+    else
+        sudo yum install sshpass -y  >&-
+        checkCommandStatus "sshpass"
+    fi
+
+
+    if [[ -f /home/${1}/.ssh/id_rsa ]]; then
+        handle_eco "${GREEN}RSA exist.${NORMAL}"
+    else
+        sudo -u ${1} ssh-keygen -t rsa -b 2048 -N "" -f /home/${1}/.ssh/id_rsa >&-
+        checkCommandStatus "RSA generate"
+    fi
+
+    local IFS=,
+    local LIST=(${IP_LIST_OF_CLUSTER})
+    local IFS=$'\n'
+    for i in "${!LIST[@]}"
+    do
+        local SERVER_IP=${LIST[$i]}
+        sudo -u ${1} sshpass -p "$2" ssh-copy-id -o StrictHostKeyChecking=no ${1}@${SERVER_IP} &>> installPGCluster.log
+        checkCommandStatus "ssh-copy-id ${1}"
+    done
+}
+
 
 get_disk_size(){
     echo $(ssh -q -oStrictHostKeyChecking=no root@$1  DISK_PATH=$2 2>> installPGCluster.log  'bash -s' <<-'ENDSSH'
@@ -204,6 +257,30 @@ ENDSSH
     checkCommandStatus $(ssh -q -oStrictHostKeyChecking=no root@$1 IP=${1}  2>> installPGCluster.log  'bash -s' <<-'ENDSSH'
         curl -s --head https://yum.postgresql.org/11/redhat/rhel-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm | head -n 1 | grep "HTTP/1.[01] [23].." > /dev/null
         echo "${IP}:    Checking server can access the url https://yum.postgresql.org/11/redhat/rhel-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm for PG11 repo install"
+ENDSSH
+    )
+}
+
+checkOSUsers(){
+    checkCommandStatus $(ssh -q -oStrictHostKeyChecking=no root@$1 IP=${1} PG_SUPER_USER_PASSWORD=${PG_SUPER_USER_PASSWORD} 2>> installPGCluster.log  'bash -s' <<-'ENDSSH'
+            if getent passwd postgres > /dev/null 2>&1; then
+                echo "${IP}: postgres user already exists"
+            else
+                adduser postgres -d /home/postgres -s /bin/bash 2>/dev/null;
+                echo ${PG_SUPER_USER_PASSWORD} | passwd --stdin postgres 2>/dev/null;
+                echo "${IP}: User postgres created.";
+            fi
+ENDSSH
+    )
+
+    checkCommandStatus $(ssh -q -oStrictHostKeyChecking=no root@$1 IP=${1} PG_BACKREST_USER_PASSWORD=${PG_BACKREST_USER_PASSWORD} 2>> installPGCluster.log  'bash -s' <<-'ENDSSH'
+        if getent passwd pgbackrest > /dev/null 2>&1; then
+            echo "${IP}: pgbackrest user already exists"
+        else
+            adduser pgbackrest -d /home/pgbackrest -s /bin/bash 2>/dev/null
+            echo ${PG_BACKREST_USER_PASSWORD} | passwd --stdin pgbackrest 2>/dev/null
+            echo "${IP}: User pgbackrest created.";
+        fi
 ENDSSH
     )
 }
@@ -324,6 +401,9 @@ validate_env() {
     # Check server connections for download packs
     checkInternetConnections "$IP"
 
+    # Check OS Users postgres, pgbackrest
+    checkOSUsers "$IP"
+
     rm -rf  installPGCluster.log
     rsync -qaz ./installPGCluster root@"${IP}":/root/
     checkCommandStatus "Getting scripts ready : rsync"
@@ -331,8 +411,6 @@ validate_env() {
     banner "Validation of $IP has been finished."
   done
 }
-
-
 
 
 
@@ -422,13 +500,17 @@ CentOsPacksInstallerAndKernel(){
     yum -y install python python-devel libyaml  >&-
     checkCommandStatus "Install sshpass python"
 
-
     # Python PIP install
     wget -q --output-document="./get-pip.py" https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
     checkCommandStatus "Download PIP"
     sudo python ./get-pip.py  >&-
     checkCommandStatus "Installing python PIP"
     rm ./get-pip.py
+
+    install_ssh_id_to_all_servers postgres ${PG_SUPER_USER_PASSWORD}
+    checkCommandStatus "Installing postgres os user"
+    install_ssh_id_to_all_servers pgbackrest ${PG_BACKREST_USER_PASSWORD}
+    checkCommandStatus "Installing pgbackrest os use"
 
 
     # Postgres server repo add
@@ -443,7 +525,7 @@ CentOsPacksInstallerAndKernel(){
     sudo yum groupinstall "PostgreSQL Database Server 11 PGDG" -y >&-
     checkCommandStatus "Installing PostgreSQL Database Server 11 PGDG"
     # Postgres tools install
-    sudo yum install pg_activity pg_badger -y  >&-
+    sudo yum install pg_activity pg_badger pg_stat_kcache11 pgaudit13_11 pg_qualstats11 pg_squeeze11 timescaledb_11 cstore_fdw_11 citus_11 pgbackrest -y  >&-
     checkCommandStatus "Installing pg_activity pg_badger"
 
 
@@ -461,48 +543,48 @@ CentOsPacksInstallerAndKernel(){
 
     mkdir -p /etc/tuned/postgresql-tuned
     echo '[main]
-    include = throughput-performance
-    summary = For excellent PostgreSQL database workload performance
+include = throughput-performance
+summary = For excellent PostgreSQL database workload performance
 
-    [disk]
-    readahead = 4096
+[disk]
+readahead = 4096
 
-    [sysctl]
-    kernel.shmmax = '"${shmmax}"'
-    kernel.shmall = '"${shmall}"'
-    kernel.shmmni = 4096
-    kernel.sem = 512 64000 100 2048
+[sysctl]
+kernel.shmmax = '"${shmmax}"'
+kernel.shmall = '"${shmall}"'
+kernel.shmmni = 4096
+kernel.sem = 512 64000 100 2048
 
-    fs.file-max = 2097152
+fs.file-max = 2097152
 
-    # 64MB & wcache or 8MB & 64MB
-    vm.dirty_background_ratio = 0
-    vm.dirty_background_bytes = 67108864
+# 64MB & wcache or 8MB & 64MB
+vm.dirty_background_ratio = 0
+vm.dirty_background_bytes = 67108864
 
-    vm.dirty_ratio = 0
-    vm.dirty_bytes = 1073741824
+vm.dirty_ratio = 0
+vm.dirty_bytes = 1073741824
 
-    # must be lower
-    vm.dirty_expire_centisecs = 3000
-    vm.dirty_writeback_centisecs = 500
+# must be lower
+vm.dirty_expire_centisecs = 3000
+vm.dirty_writeback_centisecs = 500
 
-    vm.swappiness = 0
-    vm.overcommit_memory = 2
-    vm.overcommit_ratio = 80
+vm.swappiness = 0
+vm.overcommit_memory = 2
+vm.overcommit_ratio = 80
 
-    vm.zone_reclaim_mode = 0
-    kernel.numa_balancing = 0
+vm.zone_reclaim_mode = 0
+kernel.numa_balancing = 0
 
-    kernel.sched_min_granularity_ns = 2000000
-    kernel.sched_latency_ns = 10000000
-    kernel.sched_wakeup_granularity_ns = 3000000 # < (sched_latency_ns / 2)
-    kernel.sched_migration_cost_ns = 5000000
-    kernel.sched_autogroup_enabled = 0
+kernel.sched_min_granularity_ns = 2000000
+kernel.sched_latency_ns = 10000000
+kernel.sched_wakeup_granularity_ns = 3000000 # < (sched_latency_ns / 2)
+kernel.sched_migration_cost_ns = 5000000
+kernel.sched_autogroup_enabled = 0
 
-    #  vm.nr_hugepages = <total ram / 2 olacak şekilde, sb den daha da büyük olacak şekilde>
-    vm.hugetlb_shm_group = 26
-    vm.hugepages_treat_as_movable = 0
-    vm.nr_overcommit_hugepages = 512' > "/etc/tuned/postgresql-tuned/tuned.conf"
+#  vm.nr_hugepages = <total ram / 2 olacak şekilde, sb den daha da büyük olacak şekilde>
+vm.hugetlb_shm_group = 26
+vm.hugepages_treat_as_movable = 0
+vm.nr_overcommit_hugepages = 512' > "/etc/tuned/postgresql-tuned/tuned.conf"
 
     tuned-adm profile postgresql-tuned  >&-
     tuned-adm active  >&-
@@ -513,18 +595,18 @@ CentOsPacksInstallerAndKernel(){
 
     create_disabler_and_activate(){
         echo '[Unit]
-        Description=Disable Transparent Huge Pages (THP)
-        Before='"patroni_${SCOPE_NAME}.service"'
+Description=Disable Transparent Huge Pages (THP)
+Before='"patroni_${SCOPE_NAME}.service"'
 
-        [Service]
-        Type=notify
+[Service]
+Type=notify
 
-        ExecStart=/bin/bash -c '"'"'echo never > /sys/kernel/mm/transparent_hugepage/enabled && echo never > /sys/kernel/mm/transparent_hugepage/defrag; while true; do grep -q "\[never\]" /sys/kernel/mm/transparent_hugepage/enabled; check1=$?; grep -q "\[never\]" /sys/kernel/mm/transparent_hugepage/defrag; check2=$?; if (( check1 + check2 )); then echo waiting; sleep 1; else echo succeed; break; fi done; /bin/systemd-notify --ready'"'"'
+ExecStart=/bin/bash -c '"'"'echo never > /sys/kernel/mm/transparent_hugepage/enabled && echo never > /sys/kernel/mm/transparent_hugepage/defrag; while true; do grep -q "\[never\]" /sys/kernel/mm/transparent_hugepage/enabled; check1=$?; grep -q "\[never\]" /sys/kernel/mm/transparent_hugepage/defrag; check2=$?; if (( check1 + check2 )); then echo waiting; sleep 1; else echo succeed; break; fi done; /bin/systemd-notify --ready'"'"'
 
-        RemainAfterExit=true
+RemainAfterExit=true
 
-        [Install]
-        WantedBy=multi-user.target' > /etc/systemd/system/postgresql-thp-disabler.service
+[Install]
+WantedBy=multi-user.target' > /etc/systemd/system/postgresql-thp-disabler.service
 
         systemctl enable postgresql-thp-disabler
         systemctl start postgresql-thp-disabler
@@ -709,16 +791,16 @@ ENDSSH
                 checkCommandStatus "Moving orjinal conf file"
 
                 echo '#[Member]
-    ETCD_DATA_DIR="/var/lib/etcd/default.etcd"
-    ETCD_LISTEN_PEER_URLS="http://'${SERVER_IP}':2380"
-    ETCD_LISTEN_CLIENT_URLS="http://'${SERVER_IP}':2379,http://127.0.0.1:2379"
-    ETCD_NAME="'${NAME}'"
-    #[Clustering]
-    ETCD_INITIAL_ADVERTISE_PEER_URLS="http://'${SERVER_IP}':2380"
-    ETCD_ADVERTISE_CLIENT_URLS="http://'${SERVER_IP}':2379"
-    ETCD_INITIAL_CLUSTER="'${ETCD_INITIAL_CLUSTER}'"
-    ETCD_INITIAL_CLUSTER_TOKEN="'${SCOPE_NAME}'_CLS"
-    ETCD_INITIAL_CLUSTER_STATE="new"' > /etc/etcd/etcd.conf
+ETCD_DATA_DIR="/var/lib/etcd/default.etcd"
+ETCD_LISTEN_PEER_URLS="http://'${SERVER_IP}':2380"
+ETCD_LISTEN_CLIENT_URLS="http://'${SERVER_IP}':2379,http://127.0.0.1:2379"
+ETCD_NAME="'${NAME}'"
+#[Clustering]
+ETCD_INITIAL_ADVERTISE_PEER_URLS="http://'${SERVER_IP}':2380"
+ETCD_ADVERTISE_CLIENT_URLS="http://'${SERVER_IP}':2379"
+ETCD_INITIAL_CLUSTER="'${ETCD_INITIAL_CLUSTER}'"
+ETCD_INITIAL_CLUSTER_TOKEN="'${SCOPE_NAME}'_CLS"
+ETCD_INITIAL_CLUSTER_STATE="new"' > /etc/etcd/etcd.conf
 
                checkCommandStatus "Write new conf file"
             fi
@@ -804,119 +886,180 @@ ENDSSH
 
 create_master_template(){
 
-    ${ETCD_PASSWORD}
-
     ssh -oStrictHostKeyChecking=no root@${1} SERVER_IP=${1} SCOPE_NAME=${2} PG_PORT=${PG_PORT}  ETCD_PASSWORD=${ETCD_PASSWORD} 2>> installPGCluster.log 'bash -s' <<-'ENDSSH'
  echo 'scope: SCOPE_NAME
 namespace: NAME_SPACE
 name: NAME_OF_INSTANCE
 
+log:
+  format: "%(levelname)s: %(message)s"
+
 restapi:
-  listen: SERVER_IP:8008
+  listen: 0.0.0.0:8008
   connect_address: SERVER_IP:8008
 #  certfile: /etc/ssl/certs/ssl-cert-snakeoil.pem
 #  keyfile: /etc/ssl/private/ssl-cert-snakeoil.key
-#  authentication:
-#    username: test
-#    password: test
-
-# ctl:
-#   insecure: false # Allow connections to SSL sites without certs
-#   certfile: /etc/ssl/certs/ssl-cert-snakeoil.pem
-#   cacert: /etc/ssl/certs/ssl-cacert-snakeoil.pem
+  authentication:
+    username: username
+    password: password
 
 etcd:
-    use_proxies: false
-    hosts: ETCD_INITIAL_CLUSTER
-    protocol: http
-    username: root
-    password: ETCD_PASSWORD
-
+  use_proxies: false
+  hosts: ETCD_INITIAL_CLUSTER
+  protocol: http
+  username: root
+  password: "ETCD_PASSWORD"
 
 bootstrap:
   # this section will be written into Etcd:/<namespace>/<scope>/config after initializing new cluster
   # and all other cluster members will use it as a `global configuration`
   dcs:
     ttl: 30
-    loop_wait: 10
+    loop_wait: 5
     retry_timeout: 10
-    maximum_lag_on_failover: 1048576
-#    master_start_timeout: 300
-#    synchronous_mode: false
-    #standby_cluster:
-      #host: 127.0.0.1
-      #port: 1111
-      #primary_slot_name: patroni
+    maximum_lag_on_failover: 0
+    master_start_timeout: 45
+    synchronous_mode: true
+    synchronous_mode_strict: true
     postgresql:
       use_pg_rewind: true
-#      use_slots: true
+      use_slots: true
       parameters:
-#        wal_level: hot_standby
-#        hot_standby: "on"
-#        wal_keep_segments: 8
-#        max_wal_senders: 10
-#        max_replication_slots: 10
-#        wal_log_hints: "on"
+        max_connections: 300
+        superuser_reserved_connections: 50
+        unix_socket_directories: "/var/run/postgresql"
+        unix_socket_permissions: 0755
+        shared_buffers: 128MB
+        huge_pages: off
+        work_mem: 4MB
+        maintenance_work_mem: 32MB
+        autovacuum_work_mem: 32MB
+        max_stack_depth: 2MB
+        temp_file_limit: 2097152
+        max_files_per_process: 1000
+        bgwriter_delay: 50ms
+        bgwriter_lru_maxpages: 1000
+        bgwriter_lru_multiplier: 10.0
+        bgwriter_flush_after: 512kB
+        effective_io_concurrency: 2
+        max_worker_processes: 12
+        max_parallel_maintenance_workers: 2
+        max_parallel_workers_per_gather: 2
+        max_parallel_workers: 8
+        backend_flush_after: 512kB
+        wal_level: logical
+        fsync: on
+        synchronous_commit: "remote_apply"
+        wal_sync_method: fdatasync
+        full_page_writes: on
+        wal_compression: on
+        wal_log_hints: on
+        wal_buffers: 16MB
+        checkpoint_timeout: 5min
+        max_wal_size: 128MB
+        min_wal_size: 64MB
+        checkpoint_completion_target: 0.9
+        checkpoint_flush_after: 256kB
+        checkpoint_warning: 30s
 #        archive_mode: "on"
-#        archive_timeout: 1800s
-#        archive_command: mkdir -p ../wal_archive && test ! -f ../wal_archive/%f && cp %p ../wal_archive/%f
+#        archive_command: "/bin/pgbackrest --stanza={{ project_name }} archive-push %p"
+        max_wal_senders: 10
+        wal_keep_segments: 64
+        max_replication_slots: 10
+        track_commit_timestamp: on
+#        synchronous_standby_names: "first 1 ({{ node1_safe_hostname }}, {{ node2_safe_hostname }}, {{ node3_safe_hostname }})"
+        hot_standby: "on"
+        hot_standby_feedback: "on"
+        effective_cache_size: 512MB
+        default_statistics_target: 10000
+        log_destination: "stderr"
+        logging_collector: on
+        log_directory: "PG_DATA_DIR"
+        log_truncate_on_rotation: on
+        log_rotation_age: 1h
+        log_rotation_size: 0
+        log_min_duration_statement: 0
+        log_checkpoints: on
+        log_connections: on
+        log_disconnections: on
+        log_line_prefix: "#_# t[%m] p[%p] hp[%r] db[%d] u[%u] a[%a] tx[%x:%v] s[%c:%l] e[%e] i[%i] "
+        log_lock_waits: on
+        log_temp_files: 0
+        track_io_timing: on
+        track_functions: all
+        track_activity_query_size: 2048
+        autovacuum: on
+        log_autovacuum_min_duration: 0
+        autovacuum_max_workers: 3
+        shared_preload_libraries: "pg_stat_statements, pg_stat_kcache, pgaudit, pg_qualstats, pg_squeeze, cstore_fdw"
+        bgw_replstatus.port: 5400
 #      recovery_conf:
-#        restore_command: cp ../wal_archive/%f %p
+#        restore_command: "/bin/pgbackrest --stanza={{ project_name }} archive-get %f %p"
 
-  # some desired options for 'initdb'
-  initdb:  # Note: It needs to be a list (some options need values, others are switches)
+  initdb:
   - encoding: UTF8
-  - waldir=PG_WAL_PATH
   - data-checksums
+  - waldir: PG_WAL_PATH
+  - auth-local: peer
+  - auth-host: md5
+  - lc-collate: tr_TR.utf8
+  - lc-ctype: tr_TR.utf8
 
-  pg_hba:  # Add following lines to pg_hba.conf after running 'initdb'
-  # For kerberos gss based connectivity (discard @.*$)
-  #- host replication replicator 127.0.0.1/32 gss include_realm=0
-  #- host all all 0.0.0.0/0 gss include_realm=0
-  - host replication replicator 0.0.0.0/0 md5
-  - host all all 0.0.0.0/0 md5
-#  - hostssl all all 0.0.0.0/0 md5
+  pg_hba:
+   - host replication replica_user 0.0.0.0/0 md5
+   - host all all 0.0.0.0/0 md5
+#  - host    replication     replica_user    {{ node1_replication_addr }}/32       trust
+#  - host    replication     replica_user    {{ node2_replication_addr }}/32       trust
+#  - host    replication     replica_user    {{ node3_replication_addr }}/32       trust
+#  - host    all             postgres        {{ node1_replication_addr }}/32       trust
+#  - host    all             postgres        {{ node2_replication_addr }}/32       trust
+#  - host    all             postgres        {{ node3_replication_addr }}/32       trust
+#  - host    all             nrpe            127.0.0.1/32            md5
 
-  # Additional script to be launched after initial cluster creation (will be passed the connection URL as parameter)
-# post_init: /usr/local/bin/setup_cluster.sh
+#  post_init: /pg01/mounts/data_01/patroni/postgresql-11-pg01-5432-patroni-{{ project_name }}-postInit.sh
 
-  # Some additional users users which needs to be created after initializing new cluster
+# Some additional users users which needs to be created after initializing new cluster
   users:
-    admin:
-      password: admin
+    nrpe:
+      password: nrpe
       options:
-        - createrole
-        - createdb
+        - superuser
 
 postgresql:
-  listen: SERVER_IP:PG_PORT
+  listen: 0.0.0.0:PG_PORT
   connect_address: SERVER_IP:PG_PORT
+  use_unix_socket: true
   data_dir: PG_DATA_DIR
   bin_dir: PG_BIN_DIR
-#  config_dir:
-  pgpass: /tmp/pgpass0
+  pgpass: /var/lib/pgsql/.pgpass
+#  callbacks:
+#    on_reload: /pg01/mounts/data_01/patroni/callback.sh
+#    on_restart: /pg01/mounts/data_01/patroni/callback.sh
+#    on_role_change: /pg01/mounts/data_01/patroni/callback.sh
+#    on_start: /pg01/mounts/data_01/patroni/callback.sh
+#    on_stop: /pg01/mounts/data_01/patroni/callback.sh
   authentication:
     replication:
-      username: replicator
-      password: REPLICATION_USER_PASSWORD
+      username: replica_user
+      password: "REPLICATION_USER_PASSWORD"
     superuser:
       username: postgres
-      password: PG_SUPER_USER_PASSWORD
+      password: "PG_SUPER_USER_PASSWORD"
     rewind:  # Has no effect on postgres 10 and lower
       username: rewind_prod
-      password: PG_SUPER_USER_PASSWORD
-  # Server side kerberos spn
-#  krbsrvname: postgres
+      password: "PG_SUPER_USER_PASSWORD"
   parameters:
-    # Fully qualified kerberos ticket file for the running user
-    # same as KRB5CCNAME used by the GSS
-#   krb_server_keyfile: /var/spool/keytabs/postgres
-    unix_socket_directories: '.'
+    log_filename: "{{ this.safe_hostname }}-pg01-%Y.%m.%d.%H.log"
 
-#watchdog:
-#  mode: automatic # Allowed values: off, automatic, required
-#  device: /dev/watchdog
-#  safety_margin: 5
+# create_replica_method:
+#    - custom_bb
+#  custom_bb:
+#    command : /pg01/mounts/data_01/patroni/postgresql-11-pg01-5432-patroni-{{ project_name }}-baseBackup.sh
+
+watchdog:
+  mode: required
+  device: /dev/watchdog
+  safety_margin: 5
 
 tags:
     nofailover: false
@@ -924,6 +1067,7 @@ tags:
     clonefrom: false
     nosync: false' > "/etc/patroni_${SCOPE_NAME}.yml"
 ENDSSH
+
 
 
 }
@@ -984,7 +1128,7 @@ ENDSSH
            create_master_template ${SERVER_IP} ${SCOPE_NAME}
            checkCommandStatus "Patroni create template conf to ${SERVER_IP} "
 
-           ssh -oStrictHostKeyChecking=no root@"${SERVER_IP}"  NAME=${NAME} SERVER_IP=${SERVER_IP} SCOPE_NAME=${SCOPE_NAME} NAMESPACE=${DSC_ROOT_PATH} ETCD_INITIAL_CLUSTER="${ETCD_INITIAL_CLUSTER}" WAL_PATH="/pg_${SCOPE_NAME}/mounts/wal_m/wal" DATA_PATH="/pg_${SCOPE_NAME}/mounts/data_m/data" PG_BIN_DIR="/usr/pgsql-11/bin" PG_PORT=${PG_PORT} ETCD_PASSWORD=${ETCD_PASSWORD} 'bash -s' <<-'ENDSSH'
+           ssh -oStrictHostKeyChecking=no root@"${SERVER_IP}"  NAME=${NAME} SERVER_IP=${SERVER_IP} SCOPE_NAME=${SCOPE_NAME} NAMESPACE=${DSC_ROOT_PATH} ETCD_INITIAL_CLUSTER="${ETCD_INITIAL_CLUSTER}" WAL_PATH="/pg_${SCOPE_NAME}/mounts/wal_m/wal" DATA_PATH="/pg_${SCOPE_NAME}/mounts/data_m/data" PG_BIN_DIR="/usr/pgsql-11/bin" PG_PORT=${PG_PORT} ETCD_PASSWORD=${ETCD_PASSWORD} PG_SUPER_USER_PASSWORD=${PG_SUPER_USER_PASSWORD} REPLICATION_USER_PASSWORD=${REPLICATION_USER_PASSWORD} 'bash -s' <<-'ENDSSH'
 
                 check_program_exist()
                 {
@@ -1024,49 +1168,49 @@ ENDSSH
 
 
                 echo '# This is an example systemd config file for Patroni
-        # You can copy it to "/etc/systemd/system/patroni.service",
+# You can copy it to "/etc/systemd/system/patroni.service",
 
-        [Unit]
-        Description=Runners to orchestrate a high-availability PostgreSQL
-        After=syslog.target network.target
+[Unit]
+Description=Runners to orchestrate a high-availability PostgreSQL
+After=syslog.target network.target
 
-        [Service]
-        Type=simple
+[Service]
+Type=simple
 
-        User=postgres
-        Group=postgres
+User=postgres
+Group=postgres
 
-        # Read in configuration file if it exists, otherwise proceed
-        EnvironmentFile=-/etc/patroni_env.conf
+# Read in configuration file if it exists, otherwise proceed
+EnvironmentFile=-/etc/patroni_env.conf
 
-        WorkingDirectory=~
+WorkingDirectory=~
 
-        # Where to send early-startup messages from the server
-        # This is normally controlled by the global default set by systemd
-        #StandardOutput=syslog
+# Where to send early-startup messages from the server
+# This is normally controlled by the global default set by systemd
+#StandardOutput=syslog
 
-        # Pre-commands to start watchdog device
-        # Uncomment if watchdog is part of your patroni setup
-        #ExecStartPre=-/usr/bin/sudo /sbin/modprobe softdog
-        #ExecStartPre=-/usr/bin/sudo /bin/chown postgres /dev/watchdog
+# Pre-commands to start watchdog device
+# Uncomment if watchdog is part of your patroni setup
+#ExecStartPre=-/usr/bin/sudo /sbin/modprobe softdog
+#ExecStartPre=-/usr/bin/sudo /bin/chown postgres /dev/watchdog
 
-        # Start the patroni process
-        ExecStart=/bin/patroni '"/etc/patroni_${SCOPE_NAME}.yml"'
+# Start the patroni process
+ExecStart=/bin/patroni '"/etc/patroni_${SCOPE_NAME}.yml"'
 
-        # Send HUP to reload from patroni.yml
-        ExecReload=/bin/kill -s HUP $MAINPID
+# Send HUP to reload from patroni.yml
+ExecReload=/bin/kill -s HUP $MAINPID
 
-        # only kill the patroni process, not its children, so it will gracefully stop postgres
-        KillMode=process
+# only kill the patroni process, not its children, so it will gracefully stop postgres
+KillMode=process
 
-        # Give a reasonable amount of time for the server to start up/shut down
-        TimeoutSec=30
+# Give a reasonable amount of time for the server to start up/shut down
+TimeoutSec=30
 
-        # Do not restart the service if it crashes, we want to manually inspect database on failure
-        Restart=no
+# Do not restart the service if it crashes, we want to manually inspect database on failure
+Restart=no
 
-        [Install]
-        WantedBy=multi-user.target' > /etc/systemd/system/patroni_${SCOPE_NAME}.service
+[Install]
+WantedBy=multi-user.target' > /etc/systemd/system/patroni_${SCOPE_NAME}.service
 
         firewall-cmd --reload >&-
         systemctl restart firewalld >&-
@@ -1100,6 +1244,138 @@ ENDSSH
 }
 
 
+InstallPGBackRest(){
+
+        start_setup_backrest() {
+          local IFS=,
+          local LIST=(${IP_LIST_OF_CLUSTER})
+          local IFS=$'\n'
+          local ETCD_INITIAL_CLUSTER=
+
+          for i in "${!LIST[@]}"
+          do
+           SERVER_ORDER_NUMBER=$(echo $(( ${i}+1 )))
+           SERVER_IP=${LIST[$i]}
+           NAME="patroni_"${SERVER_ORDER_NUMBER}"_${SERVER_IP}"
+
+           create_master_template ${SERVER_IP} ${SCOPE_NAME}
+           checkCommandStatus "Patroni create template conf to ${SERVER_IP} "
+
+           ssh -oStrictHostKeyChecking=no root@"${SERVER_IP}"  NAME=${NAME} SERVER_IP=${SERVER_IP} SCOPE_NAME=${SCOPE_NAME} NAMESPACE=${DSC_ROOT_PATH} ETCD_INITIAL_CLUSTER="${ETCD_INITIAL_CLUSTER}" WAL_PATH="/pg_${SCOPE_NAME}/mounts/wal_m/wal" DATA_PATH="/pg_${SCOPE_NAME}/mounts/data_m/data" PG_BIN_DIR="/usr/pgsql-11/bin" PG_PORT=${PG_PORT} ETCD_PASSWORD=${ETCD_PASSWORD} PG_SUPER_USER_PASSWORD=${PG_SUPER_USER_PASSWORD} REPLICATION_USER_PASSWORD=${REPLICATION_USER_PASSWORD} 'bash -s' <<-'ENDSSH'
+
+                check_program_exist()
+                {
+                  command -v "$1" >/dev/null 2>&1
+                }
+
+                checkCommandStatus(){
+                    if [[ $? -eq 0 ]]; then
+                        echo "${SERVER_IP} :$1..patroni_install....."${GREEN}"OK${NORMAL}";
+                    else
+                        echo "${SERVER_IP} :$1..patroni_install....."${RED}"FAILED_"$?"${NORMAL}";
+                        exit -901
+                    fi
+                }
+
+                if check_program_exist patroni; then
+                    checkCommandStatus "patroni already installed skip it"
+                else
+
+                    # Patroni install with pip
+                    pip -q install patroni[etcd]
+                    checkCommandStatus "Installing Patroni"
+                fi
+
+                sed -i -e 's#SCOPE_NAME#'"${SCOPE_NAME}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+                sed -i -e 's#NAME_SPACE#'"${NAMESPACE}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+                sed -i -e 's#NAME_OF_INSTANCE#'"${NAME}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+                sed -i -e 's#SERVER_IP#'"${SERVER_IP}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+                sed -i -e 's#ETCD_INITIAL_CLUSTER#'"${ETCD_INITIAL_CLUSTER}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+                sed -i -e 's#PG_WAL_PATH#'"${WAL_PATH}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+                sed -i -e 's#PG_DATA_DIR#'"${DATA_PATH}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+                sed -i -e 's#PG_BIN_DIR#'"${PG_BIN_DIR}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+                sed -i -e 's#PG_PORT#'"${PG_PORT}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+                sed -i -e 's#ETCD_PASSWORD#'"${ETCD_PASSWORD}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+                sed -i -e 's#REPLICATION_USER_PASSWORD#'"${REPLICATION_USER_PASSWORD}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+                sed -i -e 's#PG_SUPER_USER_PASSWORD#'"${PG_SUPER_USER_PASSWORD}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
+
+
+                echo '# This is an example systemd config file for Patroni
+# You can copy it to "/etc/systemd/system/patroni.service",
+
+[Unit]
+Description=Runners to orchestrate a high-availability PostgreSQL
+After=syslog.target network.target
+
+[Service]
+Type=simple
+
+User=postgres
+Group=postgres
+
+# Read in configuration file if it exists, otherwise proceed
+EnvironmentFile=-/etc/patroni_env.conf
+
+WorkingDirectory=~
+
+# Where to send early-startup messages from the server
+# This is normally controlled by the global default set by systemd
+#StandardOutput=syslog
+
+# Pre-commands to start watchdog device
+# Uncomment if watchdog is part of your patroni setup
+#ExecStartPre=-/usr/bin/sudo /sbin/modprobe softdog
+#ExecStartPre=-/usr/bin/sudo /bin/chown postgres /dev/watchdog
+
+# Start the patroni process
+ExecStart=/bin/patroni '"/etc/patroni_${SCOPE_NAME}.yml"'
+
+# Send HUP to reload from patroni.yml
+ExecReload=/bin/kill -s HUP $MAINPID
+
+# only kill the patroni process, not its children, so it will gracefully stop postgres
+KillMode=process
+
+# Give a reasonable amount of time for the server to start up/shut down
+TimeoutSec=30
+
+# Do not restart the service if it crashes, we want to manually inspect database on failure
+Restart=no
+
+[Install]
+WantedBy=multi-user.target' > /etc/systemd/system/patroni_${SCOPE_NAME}.service
+
+        firewall-cmd --reload >&-
+        systemctl restart firewalld >&-
+
+        systemctl enable patroni_${SCOPE_NAME}.service
+        systemctl start patroni_${SCOPE_NAME}.service
+        checkCommandStatus "Patroni Start"
+ENDSSH
+
+
+
+
+
+
+        done
+
+
+
+       }
+
+       start_setup_patroni
+
+       for i in "${!LIST[@]}"
+       do
+          SERVER_IP=${LIST[$i]}
+          checkCommandStatus "Patroni status checking" check_patroni_status
+          break;
+       done
+
+
+}
+
 
 cent_os_env_installer() {
 
@@ -1111,8 +1387,8 @@ cent_os_env_installer() {
 
     banner "$IP CentOS Package and Kernel started."
 
-    ssh -oStrictHostKeyChecking=no root@"${IP}" IP=${IP} SCOPE_NAME=${SCOPE_NAME} DATA_PATH=${DATA_PATH} WAL_PATH=${WAL_PATH} DSC_ROOT_PATH=${DSC_ROOT_PATH} PG_PORT=${PG_PORT} ETCD_PASSWORD=${ETCD_PASSWORD} REPLICATION_USER_PASSWORD=${REPLICATION_USER_PASSWORD} PG_SUPER_USER_PASSWORD=${PG_SUPER_USER_PASSWORD} 2>> installPGCluster.log 'bash -s' <<-'ENDSSH'
-    /root/installPGCluster -n "NOT_NEED" -p "NOT_NEED" -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -g ${ETCD_PASSWORD} -t ${REPLICATION_USER_PASSWORD} -y ${PG_SUPER_USER_PASSWORD} -x 1
+    ssh -oStrictHostKeyChecking=no root@"${IP}" IP=${IP} IP_LIST_OF_CLUSTER=${IP_LIST_OF_CLUSTER} SCOPE_NAME=${SCOPE_NAME} DATA_PATH=${DATA_PATH} WAL_PATH=${WAL_PATH} DSC_ROOT_PATH=${DSC_ROOT_PATH} PG_PORT=${PG_PORT} ETCD_PASSWORD=${ETCD_PASSWORD} REPLICATION_USER_PASSWORD=${REPLICATION_USER_PASSWORD} PG_SUPER_USER_PASSWORD=${PG_SUPER_USER_PASSWORD} PG_BACKREST_USER_PASSWORD=${PG_BACKREST_USER_PASSWORD} 2>> installPGCluster.log 'bash -s' <<-'ENDSSH'
+    /root/installPGCluster -n "NOT_NEED" -p ${IP_LIST_OF_CLUSTER} -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -g ${ETCD_PASSWORD} -t ${REPLICATION_USER_PASSWORD} -y ${PG_SUPER_USER_PASSWORD} -u ${PG_BACKREST_USER_PASSWORD} -x 1
     if [[ $? -eq 0 ]]; then
             echo "system..install....."${GREEN}"OK${NORMAL}";
         else
@@ -1125,9 +1401,9 @@ ENDSSH
   done
 
 
-  /root/installPGCluster -n "NOT_NEED" -p ${IP_LIST_OF_CLUSTER} -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -g ${ETCD_PASSWORD}  -t ${REPLICATION_USER_PASSWORD} -y ${PG_SUPER_USER_PASSWORD} -x 2
+  /root/installPGCluster -n "NOT_NEED" -p ${IP_LIST_OF_CLUSTER} -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -g ${ETCD_PASSWORD}  -t ${REPLICATION_USER_PASSWORD} -y ${PG_SUPER_USER_PASSWORD} -u ${PG_BACKREST_USER_PASSWORD} -x 2
   checkCommandStatus
-  /root/installPGCluster -n "NOT_NEED" -p ${IP_LIST_OF_CLUSTER} -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -g ${ETCD_PASSWORD}  -t ${REPLICATION_USER_PASSWORD} -y ${PG_SUPER_USER_PASSWORD} -x 3
+  /root/installPGCluster -n "NOT_NEED" -p ${IP_LIST_OF_CLUSTER} -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -g ${ETCD_PASSWORD}  -t ${REPLICATION_USER_PASSWORD} -y ${PG_SUPER_USER_PASSWORD} -u ${PG_BACKREST_USER_PASSWORD} -x 3
   checkCommandStatus
 
 }
@@ -1136,9 +1412,11 @@ ENDSSH
 if [[ -f "/etc/centos-release" ]]; then
     # Install OS packs
 
-    checkCommandStatus "RUN_LEVEL ... ${RUN_LEVEL}"
+    # checkCommandStatus "RUN_LEVEL ... ${RUN_LEVEL}"
 
     if [[ -z ${RUN_LEVEL} ]] ;then
+        bannerWithoutTime "PosgreSQL  11  HA  Cluster  Installer"
+        bannerWithoutTime "© All Rights Reserved by TURKSAT A.S."
         validate_env "${IP_LIST_OF_CLUSTER}"
         checkCommandStatus
         cent_os_env_installer "${IP_LIST_OF_CLUSTER}"
