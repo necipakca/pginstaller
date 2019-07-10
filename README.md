@@ -24,3 +24,4 @@ PostgreSQL HA Cluster Installer For CentOS
     
 # Compile to Portable Binary
         shc -rf installPGCluster.sh -o installPGCluster
+        
