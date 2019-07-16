@@ -974,7 +974,7 @@ bootstrap:
         default_statistics_target: 10000
         log_destination: "stderr"
         logging_collector: on
-        log_directory: "PG_DATA_DIR"
+        log_directory: "PG_DATA_DIR/pg_logs"
         log_truncate_on_rotation: on
         log_rotation_age: 1h
         log_rotation_size: 0
@@ -1049,7 +1049,7 @@ postgresql:
       username: rewind_prod
       password: "PG_SUPER_USER_PASSWORD"
   parameters:
-    log_filename: "{{ this.safe_hostname }}-pg01-%Y.%m.%d.%H.log"
+    log_filename: "SCOPE_NAME-log-%Y.%m.%d.%H.log"
 
 # create_replica_method:
 #    - custom_bb
@@ -1067,6 +1067,7 @@ tags:
     clonefrom: false
     nosync: false' > "/etc/patroni_${SCOPE_NAME}.yml"
 ENDSSH
+
 
 
 
