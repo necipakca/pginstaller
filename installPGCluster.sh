@@ -525,7 +525,7 @@ CentOsPacksInstallerAndKernel(){
     sudo yum groupinstall "PostgreSQL Database Server 11 PGDG" -y >&-
     checkCommandStatus "Installing PostgreSQL Database Server 11 PGDG"
     # Postgres tools install
-    sudo yum install pg_activity pg_badger pg_stat_kcache11 pgaudit13_11 pg_qualstats11 pg_squeeze11 timescaledb_11 cstore_fdw_11 citus_11 pgbackrest -y  >&-
+    sudo yum install postgresql11-plpython pg_activity pg_badger pg_stat_kcache11 pgaudit13_11 pg_qualstats11 pg_squeeze11 timescaledb_11 cstore_fdw_11 citus_11 pgbackrest -y  >&-
     checkCommandStatus "Installing pg_activity pg_badger"
 
 
@@ -1445,3 +1445,44 @@ else
     echo "Not Supported OS Type Only CentOS 7.5 and upper supported"
     exit -902
 fi
+
+
+install_influxdb(){
+
+    cat <<EOF | sudo tee /etc/yum.repos.d/influxdb.repo
+[influxdb]
+name = InfluxDB Repository - RHEL \$releasever
+baseurl = https://repos.influxdata.com/rhel/\$releasever/\$basearch/stable
+enabled = 1
+gpgcheck = 1
+gpgkey = https://repos.influxdata.com/influxdb.key
+EOF
+    sudo yum makecache fast
+    sudo yum -y install influxdb vim curl
+    sudo systemctl start influxdb && sudo systemctl enable influxdb
+
+    sudo firewall-cmd --add-port=8086/tcp --permanent
+    sudo firewall-cmd --reload
+}
+
+install_grafana(){
+
+    cat <<EOF | sudo tee /etc/yum.repos.d/grafana.repo
+[grafana]
+name=grafana
+baseurl=https://packages.grafana.com/oss/rpm
+repo_gpgcheck=1
+enabled=1
+gpgcheck=1
+gpgkey=https://packages.grafana.com/gpg.key
+sslverify=1
+sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+EOF
+
+    sudo yum -y install grafana
+    sudo systemctl start grafana-server
+    sudo systemctl enable grafana-server
+
+    sudo firewall-cmd --add-port=3000/tcp --permanent
+    sudo firewall-cmd --reload
+}
