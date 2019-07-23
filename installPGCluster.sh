@@ -193,7 +193,7 @@ install_ssh_id(){
     fi
 
     if [[ -f /root/.ssh/id_rsa ]]; then
-        handle_eco "${GREEN}RSA exist.${NORMAL}"
+        echo "${GREEN}RSA exist.${NORMAL}"
     else
         ssh-keygen -t rsa -b 2048 -N "" -f ~/.ssh/id_rsa >&-
         checkCommandStatus "RSA generate"
@@ -222,7 +222,7 @@ install_ssh_id_to_all_servers(){
 
 
     if [[ -f /home/${1}/.ssh/id_rsa ]]; then
-        handle_eco "${GREEN}RSA exist.${NORMAL}"
+        echo "${GREEN}RSA exist.${NORMAL}"
     else
         sudo -u ${1} ssh-keygen -t rsa -b 2048 -N "" -f /home/${1}/.ssh/id_rsa >&-
         checkCommandStatus "RSA generate"
@@ -483,19 +483,20 @@ FileSystemUtil(){
 
 CentOsPacksInstallerAndKernel(){
 
-    systemctl enable ntpdate.service
-    checkCommandStatus "Enable ntpdate service"
-    systemctl start ntpdate.service
-    checkCommandStatus "Start ntpdate service"
-
     yum install epel-release -y  >&-
     checkCommandStatus "Enable epel-release repo"
 
     yum update -y  >&-
     checkCommandStatus "Updating CentOS packs"
 
-    yum install gcc rsync telnet -y  >&-
+    yum install gcc ntp rsync telnet -y  >&-
     checkCommandStatus "gcc"
+
+    systemctl enable ntpd.service
+    checkCommandStatus "Enable ntpd service"
+    systemctl start ntpd.service
+    checkCommandStatus "Start ntpd service"
+
 
     yum -y install python python-devel libyaml  >&-
     checkCommandStatus "Install sshpass python"
@@ -919,8 +920,8 @@ bootstrap:
     retry_timeout: 10
     maximum_lag_on_failover: 0
     master_start_timeout: 45
-    synchronous_mode: true
-    synchronous_mode_strict: true
+    synchronous_mode: false
+    synchronous_mode_strict: false
     postgresql:
       use_pg_rewind: true
       use_slots: true
@@ -961,8 +962,8 @@ bootstrap:
         checkpoint_completion_target: 0.9
         checkpoint_flush_after: 256kB
         checkpoint_warning: 30s
-#        archive_mode: "on"
-#        archive_command: "/bin/pgbackrest --stanza={{ project_name }} archive-push %p"
+        archive_mode: "on"
+        archive_command: '/bin/true' # "/bin/pgbackrest --stanza={{ project_name }} archive-push %p"
         max_wal_senders: 10
         wal_keep_segments: 64
         max_replication_slots: 10
@@ -1071,6 +1072,7 @@ ENDSSH
 
 
 
+
 }
 
 InstallPatroni(){
@@ -1119,139 +1121,6 @@ ENDSSH
              DSC_ROOT_PATH="PG_$SCOPE_NAME"
           fi
 
-
-          for i in "${!LIST[@]}"
-          do
-           SERVER_ORDER_NUMBER=$(echo $(( ${i}+1 )))
-           SERVER_IP=${LIST[$i]}
-           NAME="patroni_"${SERVER_ORDER_NUMBER}"_${SERVER_IP}"
-
-           create_master_template ${SERVER_IP} ${SCOPE_NAME}
-           checkCommandStatus "Patroni create template conf to ${SERVER_IP} "
-
-           ssh -oStrictHostKeyChecking=no root@"${SERVER_IP}"  NAME=${NAME} SERVER_IP=${SERVER_IP} SCOPE_NAME=${SCOPE_NAME} NAMESPACE=${DSC_ROOT_PATH} ETCD_INITIAL_CLUSTER="${ETCD_INITIAL_CLUSTER}" WAL_PATH="/pg_${SCOPE_NAME}/mounts/wal_m/wal" DATA_PATH="/pg_${SCOPE_NAME}/mounts/data_m/data" PG_BIN_DIR="/usr/pgsql-11/bin" PG_PORT=${PG_PORT} ETCD_PASSWORD=${ETCD_PASSWORD} PG_SUPER_USER_PASSWORD=${PG_SUPER_USER_PASSWORD} REPLICATION_USER_PASSWORD=${REPLICATION_USER_PASSWORD} 'bash -s' <<-'ENDSSH'
-
-                check_program_exist()
-                {
-                  command -v "$1" >/dev/null 2>&1
-                }
-
-                checkCommandStatus(){
-                    if [[ $? -eq 0 ]]; then
-                        echo "${SERVER_IP} :$1..patroni_install....."${GREEN}"OK${NORMAL}";
-                    else
-                        echo "${SERVER_IP} :$1..patroni_install....."${RED}"FAILED_"$?"${NORMAL}";
-                        exit -901
-                    fi
-                }
-
-                if check_program_exist patroni; then
-                    checkCommandStatus "patroni already installed skip it"
-                else
-
-                    # Patroni install with pip
-                    pip -q install patroni[etcd]
-                    checkCommandStatus "Installing Patroni"
-                fi
-
-                sed -i -e 's#SCOPE_NAME#'"${SCOPE_NAME}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
-                sed -i -e 's#NAME_SPACE#'"${NAMESPACE}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
-                sed -i -e 's#NAME_OF_INSTANCE#'"${NAME}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
-                sed -i -e 's#SERVER_IP#'"${SERVER_IP}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
-                sed -i -e 's#ETCD_INITIAL_CLUSTER#'"${ETCD_INITIAL_CLUSTER}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
-                sed -i -e 's#PG_WAL_PATH#'"${WAL_PATH}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
-                sed -i -e 's#PG_DATA_DIR#'"${DATA_PATH}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
-                sed -i -e 's#PG_BIN_DIR#'"${PG_BIN_DIR}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
-                sed -i -e 's#PG_PORT#'"${PG_PORT}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
-                sed -i -e 's#ETCD_PASSWORD#'"${ETCD_PASSWORD}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
-                sed -i -e 's#REPLICATION_USER_PASSWORD#'"${REPLICATION_USER_PASSWORD}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
-                sed -i -e 's#PG_SUPER_USER_PASSWORD#'"${PG_SUPER_USER_PASSWORD}"'#g' "/etc/patroni_${SCOPE_NAME}.yml";
-
-
-                echo '# This is an example systemd config file for Patroni
-# You can copy it to "/etc/systemd/system/patroni.service",
-
-[Unit]
-Description=Runners to orchestrate a high-availability PostgreSQL
-After=syslog.target network.target
-
-[Service]
-Type=simple
-
-User=postgres
-Group=postgres
-
-# Read in configuration file if it exists, otherwise proceed
-EnvironmentFile=-/etc/patroni_env.conf
-
-WorkingDirectory=~
-
-# Where to send early-startup messages from the server
-# This is normally controlled by the global default set by systemd
-#StandardOutput=syslog
-
-# Pre-commands to start watchdog device
-# Uncomment if watchdog is part of your patroni setup
-#ExecStartPre=-/usr/bin/sudo /sbin/modprobe softdog
-#ExecStartPre=-/usr/bin/sudo /bin/chown postgres /dev/watchdog
-
-# Start the patroni process
-ExecStart=/bin/patroni '"/etc/patroni_${SCOPE_NAME}.yml"'
-
-# Send HUP to reload from patroni.yml
-ExecReload=/bin/kill -s HUP $MAINPID
-
-# only kill the patroni process, not its children, so it will gracefully stop postgres
-KillMode=process
-
-# Give a reasonable amount of time for the server to start up/shut down
-TimeoutSec=30
-
-# Do not restart the service if it crashes, we want to manually inspect database on failure
-Restart=no
-
-[Install]
-WantedBy=multi-user.target' > /etc/systemd/system/patroni_${SCOPE_NAME}.service
-
-        firewall-cmd --reload >&-
-        systemctl restart firewalld >&-
-
-        systemctl enable patroni_${SCOPE_NAME}.service
-        systemctl start patroni_${SCOPE_NAME}.service
-        checkCommandStatus "Patroni Start"
-ENDSSH
-
-
-
-
-
-
-        done
-
-
-
-       }
-
-       start_setup_patroni
-
-       for i in "${!LIST[@]}"
-       do
-          SERVER_IP=${LIST[$i]}
-          checkCommandStatus "Patroni status checking" check_patroni_status
-          break;
-       done
-
-
-}
-
-
-InstallPGBackRest(){
-
-        start_setup_backrest() {
-          local IFS=,
-          local LIST=(${IP_LIST_OF_CLUSTER})
-          local IFS=$'\n'
-          local ETCD_INITIAL_CLUSTER=
 
           for i in "${!LIST[@]}"
           do
