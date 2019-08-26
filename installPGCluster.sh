@@ -526,7 +526,7 @@ CentOsPacksInstallerAndKernel(){
     sudo yum groupinstall "PostgreSQL Database Server 11 PGDG" -y >&-
     checkCommandStatus "Installing PostgreSQL Database Server 11 PGDG"
     # Postgres tools install
-    sudo yum install postgresql11-plpython pg_activity pg_badger pg_stat_kcache11 pgaudit13_11 pg_qualstats11 pg_squeeze11 timescaledb_11 cstore_fdw_11 citus_11 pgbackrest -y  >&-
+    sudo yum install postgresql11-plpython pg_activity pgbadger pg_stat_kcache11 pgaudit13_11 pg_qualstats11 pg_squeeze11 timescaledb_11 cstore_fdw_11 citus_11 pgbackrest -y  >&-
     checkCommandStatus "Installing pg_activity pg_badger"
 
 
@@ -983,7 +983,7 @@ bootstrap:
         log_checkpoints: on
         log_connections: on
         log_disconnections: on
-        log_line_prefix: "#_# t[%m] p[%p] hp[%r] db[%d] u[%u] a[%a] tx[%x:%v] s[%c:%l] e[%e] i[%i] "
+        log_line_prefix: "t[%m] p[%p] hp[%r] db[%d] u[%u] a[%a] tx[%x:%v] s[%c:%l] e[%e] i[%i] "
         log_lock_waits: on
         log_temp_files: 0
         track_io_timing: on
