@@ -963,7 +963,7 @@ bootstrap:
         checkpoint_flush_after: 256kB
         checkpoint_warning: 30s
         archive_mode: "on"
-        archive_command: '/bin/true' # "/bin/pgbackrest --stanza={{ project_name }} archive-push %p"
+        archive_command: '/bin/true' # " /bin/pgbackrest --stanza={{ project_name }} archive-push %p"
         max_wal_senders: 10
         wal_keep_segments: 64
         max_replication_slots: 10
