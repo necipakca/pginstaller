@@ -199,7 +199,7 @@ install_ssh_id(){
         checkCommandStatus "RSA generate"
     fi
 
-    sshpass -p "$OS_ROOT_PASSWORD" ssh-copy-id -o StrictHostKeyChecking=no root@$1 &>> installPGCluster.log
+    sshpass -p "$OS_ROOT_PASSWORD" ssh-copy-id -o StrictHostKeyChecking=no root@$1 &>> installPG11Cluster.log
     checkCommandStatus "ssh-copy-id"
 
 }
@@ -234,27 +234,27 @@ install_ssh_id_to_all_servers(){
     for i in "${!LIST[@]}"
     do
         local SERVER_IP=${LIST[$i]}
-        sudo -u ${1} sshpass -p "$2" ssh-copy-id -o StrictHostKeyChecking=no ${1}@${SERVER_IP} &>> installPGCluster.log
+        sudo -u ${1} sshpass -p "$2" ssh-copy-id -o StrictHostKeyChecking=no ${1}@${SERVER_IP} &>> installPG11Cluster.log
         checkCommandStatus "ssh-copy-id ${1}"
     done
 }
 
 
 get_disk_size(){
-    echo $(ssh -q -oStrictHostKeyChecking=no root@$1  DISK_PATH=$2 2>> installPGCluster.log  'bash -s' <<-'ENDSSH'
+    echo $(ssh -q -oStrictHostKeyChecking=no root@$1  DISK_PATH=$2 2>> installPG11Cluster.log  'bash -s' <<-'ENDSSH'
         blockdev --getsize64 ${DISK_PATH}
 ENDSSH
     )
 }
 
 checkInternetConnections(){
-    checkCommandStatus $(ssh -q -oStrictHostKeyChecking=no root@$1 IP=${1}  2>> installPGCluster.log  'bash -s' <<-'ENDSSH'
+    checkCommandStatus $(ssh -q -oStrictHostKeyChecking=no root@$1 IP=${1}  2>> installPG11Cluster.log  'bash -s' <<-'ENDSSH'
         curl -s --head https://bootstrap.pypa.io/get-pip.py | head -n 1 | grep "HTTP/1.[01] [23].." > /dev/null
         echo "${IP}:    Checking server can access the url https://bootstrap.pypa.io/get-pip.py.c for pip install"
 ENDSSH
     )
 
-    checkCommandStatus $(ssh -q -oStrictHostKeyChecking=no root@$1 IP=${1}  2>> installPGCluster.log  'bash -s' <<-'ENDSSH'
+    checkCommandStatus $(ssh -q -oStrictHostKeyChecking=no root@$1 IP=${1}  2>> installPG11Cluster.log  'bash -s' <<-'ENDSSH'
         curl -s --head https://yum.postgresql.org/11/redhat/rhel-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm | head -n 1 | grep "HTTP/1.[01] [23].." > /dev/null
         echo "${IP}:    Checking server can access the url https://yum.postgresql.org/11/redhat/rhel-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm for PG11 repo install"
 ENDSSH
@@ -262,7 +262,7 @@ ENDSSH
 }
 
 checkOSUsers(){
-    checkCommandStatus $(ssh -q -oStrictHostKeyChecking=no root@$1 IP=${1} PG_SUPER_USER_PASSWORD=${PG_SUPER_USER_PASSWORD} 2>> installPGCluster.log  'bash -s' <<-'ENDSSH'
+    checkCommandStatus $(ssh -q -oStrictHostKeyChecking=no root@$1 IP=${1} PG_SUPER_USER_PASSWORD=${PG_SUPER_USER_PASSWORD} 2>> installPG11Cluster.log  'bash -s' <<-'ENDSSH'
             if getent passwd postgres > /dev/null 2>&1; then
                 echo "${IP}: postgres user already exists"
             else
@@ -273,7 +273,7 @@ checkOSUsers(){
 ENDSSH
     )
 
-    checkCommandStatus $(ssh -q -oStrictHostKeyChecking=no root@$1 IP=${1} PG_BACKREST_USER_PASSWORD=${PG_BACKREST_USER_PASSWORD} 2>> installPGCluster.log  'bash -s' <<-'ENDSSH'
+    checkCommandStatus $(ssh -q -oStrictHostKeyChecking=no root@$1 IP=${1} PG_BACKREST_USER_PASSWORD=${PG_BACKREST_USER_PASSWORD} 2>> installPG11Cluster.log  'bash -s' <<-'ENDSSH'
         if getent passwd pgbackrest > /dev/null 2>&1; then
             echo "${IP}: pgbackrest user already exists"
         else
@@ -286,7 +286,7 @@ ENDSSH
 }
 
 check_disk_mount_status(){
-    local STATUS_DATA_MOUNT=$(ssh -q -oStrictHostKeyChecking=no root@$1  DISK_PATH=$2 2>> installPGCluster.log  'bash -s' <<-'ENDSSH'
+    local STATUS_DATA_MOUNT=$(ssh -q -oStrictHostKeyChecking=no root@$1  DISK_PATH=$2 2>> installPG11Cluster.log  'bash -s' <<-'ENDSSH'
         if [[ $(partprobe -d -s ${DISK_PATH} | grep 'partitions') = "" ]] ; then
             echo "NOT_MOUNTED"
         else
@@ -404,8 +404,8 @@ validate_env() {
     # Check OS Users postgres, pgbackrest
     checkOSUsers "$IP"
 
-    rm -rf  installPGCluster.log
-    rsync -qaz ./installPGCluster root@"${IP}":/root/
+    rm -rf  installPG11Cluster.log
+    rsync -qaz ./installPG11Cluster root@"${IP}":/root/
     checkCommandStatus "Getting scripts ready : rsync"
 
     banner "Validation of $IP has been finished."
@@ -425,32 +425,32 @@ FileSystemUtil(){
 
     createDiskAndMount(){
         echo "${DISK_PATH}1 partition creating ...";
-        wipefs -aqf "${DISK_PATH}" &>> installPGCluster.log
+        wipefs -aqf "${DISK_PATH}" &>> installPG11Cluster.log
         checkCommandStatus  "       wipefs -aqf "${DISK_PATH}""
-        parted -s ${DISK_PATH} mklabel gpt &>> installPGCluster.log;
+        parted -s ${DISK_PATH} mklabel gpt &>> installPG11Cluster.log;
         checkCommandStatus "        mklabel gpt"
-        parted -s ${DISK_PATH} "mkpart primary 1 -1" &>> installPGCluster.log;
+        parted -s ${DISK_PATH} "mkpart primary 1 -1" &>> installPG11Cluster.log;
         checkCommandStatus "        mkpart primary 1"
-        parted -s ${DISK_PATH} set 1 lvm on &>> installPGCluster.log;
+        parted -s ${DISK_PATH} set 1 lvm on &>> installPG11Cluster.log;
         checkCommandStatus "        set 1 lvm on"
-        pvcreate "${DISK_PATH}1" &>> installPGCluster.log
+        pvcreate "${DISK_PATH}1" &>> installPG11Cluster.log
         checkCommandStatus "        pvcreate ${DISK_PATH}1"
-        vgcreate --force --yes vg_"${SCOPE_NAME}"_"${LVM_ALIAS}" "${DISK_PATH}1" &>> installPGCluster.log
+        vgcreate --force --yes vg_"${SCOPE_NAME}"_"${LVM_ALIAS}" "${DISK_PATH}1" &>> installPG11Cluster.log
         checkCommandStatus  "       vgcreate"
-        lvcreate --yes --name lv_"${SCOPE_NAME}"_"${LVM_ALIAS}" -l 100%FREE vg_"${SCOPE_NAME}"_"${LVM_ALIAS}" &>> installPGCluster.log
+        lvcreate --yes --name lv_"${SCOPE_NAME}"_"${LVM_ALIAS}" -l 100%FREE vg_"${SCOPE_NAME}"_"${LVM_ALIAS}" &>> installPG11Cluster.log
         checkCommandStatus  "       lvcreate"
-        mkfs.ext4 -F /dev/vg_"${SCOPE_NAME}"_"${LVM_ALIAS}"/lv_"${SCOPE_NAME}"_"${LVM_ALIAS}" &>> installPGCluster.log
+        mkfs.ext4 -F /dev/vg_"${SCOPE_NAME}"_"${LVM_ALIAS}"/lv_"${SCOPE_NAME}"_"${LVM_ALIAS}" &>> installPG11Cluster.log
         checkCommandStatus  "       mkfs.ext4"
-        mkdir -p /pg_${SCOPE_NAME}/mounts/${LVM_ALIAS} &>> installPGCluster.log
+        mkdir -p /pg_${SCOPE_NAME}/mounts/${LVM_ALIAS} &>> installPG11Cluster.log
         grep -q -F "/dev/vg_${SCOPE_NAME}"_"${LVM_ALIAS}/lv_${SCOPE_NAME}"_"${LVM_ALIAS}" /etc/fstab || echo  "/dev/vg_${SCOPE_NAME}"_"${LVM_ALIAS}/lv_${SCOPE_NAME}"_"${LVM_ALIAS} /pg_${SCOPE_NAME}/mounts/${LVM_ALIAS}/ ext4    defaults,noatime,nobarrier,discard  0   2" >> /etc/fstab
         checkCommandStatus  "       fstab entry adding"
-        mount /pg_${SCOPE_NAME}/mounts/${LVM_ALIAS}  &>> installPGCluster.log
+        mount /pg_${SCOPE_NAME}/mounts/${LVM_ALIAS}  &>> installPG11Cluster.log
         checkCommandStatus  "       /pg_${SCOPE_NAME}/mounts/${LVM_ALIAS} mount"
         chown -R postgres:postgres /pg_${SCOPE_NAME}/mounts/${LVM_ALIAS}
         checkCommandStatus  "       /pg_${SCOPE_NAME}/mounts/${LVM_ALIAS} owner change to postgres."
 
         # test disk
-        dd if=/dev/zero of=/pg_${SCOPE_NAME}/mounts/${LVM_ALIAS}/file.txt count=10 bs=1024 &>> installPGCluster.log
+        dd if=/dev/zero of=/pg_${SCOPE_NAME}/mounts/${LVM_ALIAS}/file.txt count=10 bs=1024 &>> installPG11Cluster.log
         checkCommandStatus  "       Writing test file /pg_${SCOPE_NAME}/mounts/${LVM_ALIAS}/file.txt"
         rm -rf /pg_${SCOPE_NAME}/mounts/${LVM_ALIAS}/file.txt
     }
@@ -461,20 +461,20 @@ FileSystemUtil(){
         read lv_name vg_name partition_p <<< $(lvs --noheadings   -o lv_name,vg_name,devices | grep "${DISK_PATH}" | awk -F"|" '{print $1" "$2" "$3}');
         checkCommandStatus  "      extract lvm_name:${lv_name}"
         if [[ ${lv_name} ]] ; then
-            #lvremove --force --yes ${vg_name} &>> installPGCluster.log ;
+            #lvremove --force --yes ${vg_name} &>> installPG11Cluster.log ;
             #checkCommandStatus  "      lvremove --force --yes ${vg_name}"
-            vgremove --force --yes ${vg_name} &>> installPGCluster.log ;
+            vgremove --force --yes ${vg_name} &>> installPG11Cluster.log ;
             checkCommandStatus  "      vgremove --force --yes ${vg_name}"
             parted -s "${DISK_PATH}" rm 1;
             checkCommandStatus  "      dd if=/dev/zero"
-            wipefs -aqf "${DISK_PATH}" &>> installPGCluster.log;
+            wipefs -aqf "${DISK_PATH}" &>> installPG11Cluster.log;
             checkCommandStatus  "      wipefs -aqf "${DISK_PATH}""
             createDiskAndMount
         else
             echo  "lvm_name coluld not extract maybe not LVM volume. Please handle disk ${DISK_PATH} yourself. It has partition but it should not have."
             dd if=/dev/zero of="${DISK_PATH}" bs=512 count=1           #parted -s "${DISK_PATH}" rm 1;
             checkCommandStatus  "      dd if=/dev/zero"
-            wipefs -aqf "${DISK_PATH}" &>> installPGCluster.log;
+            wipefs -aqf "${DISK_PATH}" &>> installPG11Cluster.log;
             checkCommandStatus  "      wipefs -aqf "${DISK_PATH}""
             createDiskAndMount
         fi
@@ -715,7 +715,7 @@ WantedBy=multi-user.target' > /etc/systemd/system/watchdog.service
 EtcdInstaller(){
 
     check_etcd_status(){
-        ssh -q -oStrictHostKeyChecking=no root@$1 2>> installPGCluster.log  'bash -s' <<-'ENDSSH'
+        ssh -q -oStrictHostKeyChecking=no root@$1 2>> installPG11Cluster.log  'bash -s' <<-'ENDSSH'
             etcdctl cluster-health
 ENDSSH
     }
@@ -724,7 +724,7 @@ ENDSSH
           for i in "${!LIST[@]}"
           do
                 FIREWALL_SERVER_IP=${LIST[$i]}
-                ssh -q -oStrictHostKeyChecking=no root@${SERVER_IP} FIREWALL_SERVER_IP=${FIREWALL_SERVER_IP} 2>> installPGCluster.log SERVER_IP=${SERVER_IP} 'bash -s' <<-'ENDSSH'
+                ssh -q -oStrictHostKeyChecking=no root@${SERVER_IP} FIREWALL_SERVER_IP=${FIREWALL_SERVER_IP} 2>> installPG11Cluster.log SERVER_IP=${SERVER_IP} 'bash -s' <<-'ENDSSH'
                 firewall-cmd --permanent --zone=public --add-rich-rule="rule family=ipv4 source address=${FIREWALL_SERVER_IP}/32 port protocol=tcp port=2380 accept"  >&-
                 firewall-cmd --permanent --zone=public --add-rich-rule="rule family=ipv4 source address=${FIREWALL_SERVER_IP}/32 port protocol=tcp port=2379 accept"  >&-
 ENDSSH
@@ -759,7 +759,7 @@ ENDSSH
        NAME="etcd"${SERVER_ORDER_NUMBER}
        SERVER_IP=${LIST[$i]}
 
-       ssh -oStrictHostKeyChecking=no root@"${SERVER_IP}"  NAME=${NAME} SERVER_IP=${SERVER_IP} SCOPE_NAME=${SCOPE_NAME} ETCD_INITIAL_CLUSTER=${ETCD_INITIAL_CLUSTER}  2>> installPGCluster.log 'bash -s' <<-'ENDSSH'
+       ssh -oStrictHostKeyChecking=no root@"${SERVER_IP}"  NAME=${NAME} SERVER_IP=${SERVER_IP} SCOPE_NAME=${SCOPE_NAME} ETCD_INITIAL_CLUSTER=${ETCD_INITIAL_CLUSTER}  2>> installPG11Cluster.log 'bash -s' <<-'ENDSSH'
             check_program_exist()
             {
               command -v "$1" >/dev/null 2>&1
@@ -815,7 +815,7 @@ ENDSSH
        NAME="etcd"${SERVER_ORDER_NUMBER}
        SERVER_IP=${LIST[$i]}
 
-       ssh -oStrictHostKeyChecking=no root@"${SERVER_IP}" SERVER_IP=${SERVER_IP} 2>> installPGCluster.log 'bash -s' <<-'ENDSSH'
+       ssh -oStrictHostKeyChecking=no root@"${SERVER_IP}" SERVER_IP=${SERVER_IP} 2>> installPG11Cluster.log 'bash -s' <<-'ENDSSH'
             checkCommandStatus(){
                 if [[ $? -eq 0 ]]; then
                     echo "${SERVER_IP} :$1..etcd_install....."${GREEN}"OK${NORMAL}";
@@ -861,7 +861,7 @@ ENDSSH
        NAME="etcd"${SERVER_ORDER_NUMBER}
        SERVER_IP=${LIST[$i]}
 
-       ssh -oStrictHostKeyChecking=no root@"${SERVER_IP}" SERVER_IP=${SERVER_IP} 2>> installPGCluster.log 'bash -s' <<-'ENDSSH'
+       ssh -oStrictHostKeyChecking=no root@"${SERVER_IP}" SERVER_IP=${SERVER_IP} 2>> installPG11Cluster.log 'bash -s' <<-'ENDSSH'
             checkCommandStatus(){
                 if [[ $? -eq 0 ]]; then
                     echo "${SERVER_IP} :$1..etcd_install....."${GREEN}"OK${NORMAL}";
@@ -887,7 +887,7 @@ ENDSSH
 
 create_master_template(){
 
-    ssh -oStrictHostKeyChecking=no root@${1} SERVER_IP=${1} SCOPE_NAME=${2} PG_PORT=${PG_PORT}  ETCD_PASSWORD=${ETCD_PASSWORD} 2>> installPGCluster.log 'bash -s' <<-'ENDSSH'
+    ssh -oStrictHostKeyChecking=no root@${1} SERVER_IP=${1} SCOPE_NAME=${2} PG_PORT=${PG_PORT}  ETCD_PASSWORD=${ETCD_PASSWORD} 2>> installPG11Cluster.log 'bash -s' <<-'ENDSSH'
  echo 'scope: SCOPE_NAME
 namespace: NAME_SPACE
 name: NAME_OF_INSTANCE
@@ -997,14 +997,15 @@ bootstrap:
 #      recovery_conf:
 #        restore_command: "/bin/pgbackrest --stanza={{ project_name }} archive-get %f %p"
 
+
   initdb:
-  - encoding: UTF8
-  - data-checksums
-  - waldir: PG_WAL_PATH
-  - auth-local: peer
-  - auth-host: md5
-  - lc-collate: tr_TR.utf8
-  - lc-ctype: tr_TR.utf8
+    - encoding: UTF8
+    - data-checksums
+    - waldir: PG_WAL_PATH
+    - auth-local: peer
+    - auth-host: md5
+    - lc-collate: tr_TR.utf8
+    - lc-ctype: tr_TR.utf8
 
   pg_hba:
    - host replication replica_user 0.0.0.0/0 md5
@@ -1072,14 +1073,13 @@ ENDSSH
 
 
 
-
 }
 
 InstallPatroni(){
 
         check_patroni_status(){
             echo $(
-            ssh -q -oStrictHostKeyChecking=no root@$1 SCOPE_NAME=${SCOPE_NAME} 2>> installPGCluster.log  'bash -s' <<-'ENDSSH'
+            ssh -q -oStrictHostKeyChecking=no root@$1 SCOPE_NAME=${SCOPE_NAME} 2>> installPG11Cluster.log  'bash -s' <<-'ENDSSH'
                 patronictl -c "/etc/patroni_${SCOPE_NAME}.yml" list ${SCOPE_NAME}
 ENDSSH
 )
@@ -1089,7 +1089,7 @@ ENDSSH
           for i in "${!LIST[@]}"
           do
                 FIREWALL_SERVER_IP=${LIST[$i]}
-                ssh -q -oStrictHostKeyChecking=no root@${SERVER_IP} FIREWALL_SERVER_IP=${FIREWALL_SERVER_IP} 2>> installPGCluster.log SERVER_IP=${SERVER_IP} PG_PORT=${PG_PORT} 'bash -s' <<-'ENDSSH'
+                ssh -q -oStrictHostKeyChecking=no root@${SERVER_IP} FIREWALL_SERVER_IP=${FIREWALL_SERVER_IP} 2>> installPG11Cluster.log SERVER_IP=${SERVER_IP} PG_PORT=${PG_PORT} 'bash -s' <<-'ENDSSH'
                 firewall-cmd --permanent --zone=public --add-rich-rule="rule family=ipv4 source address=${FIREWALL_SERVER_IP}/32 port protocol=tcp port=8008 accept"  >&-
                 firewall-cmd --permanent --zone=public --add-rich-rule="rule family=ipv4 source address=${FIREWALL_SERVER_IP}/32 port protocol=tcp port=${PG_PORT} accept"  >&-
 ENDSSH
@@ -1257,8 +1257,8 @@ cent_os_env_installer() {
 
     banner "$IP CentOS Package and Kernel started."
 
-    ssh -oStrictHostKeyChecking=no root@"${IP}" IP=${IP} IP_LIST_OF_CLUSTER=${IP_LIST_OF_CLUSTER} SCOPE_NAME=${SCOPE_NAME} DATA_PATH=${DATA_PATH} WAL_PATH=${WAL_PATH} DSC_ROOT_PATH=${DSC_ROOT_PATH} PG_PORT=${PG_PORT} ETCD_PASSWORD=${ETCD_PASSWORD} REPLICATION_USER_PASSWORD=${REPLICATION_USER_PASSWORD} PG_SUPER_USER_PASSWORD=${PG_SUPER_USER_PASSWORD} PG_BACKREST_USER_PASSWORD=${PG_BACKREST_USER_PASSWORD} 2>> installPGCluster.log 'bash -s' <<-'ENDSSH'
-    /root/installPGCluster -n "NOT_NEED" -p ${IP_LIST_OF_CLUSTER} -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -g ${ETCD_PASSWORD} -t ${REPLICATION_USER_PASSWORD} -y ${PG_SUPER_USER_PASSWORD} -u ${PG_BACKREST_USER_PASSWORD} -x 1
+    ssh -oStrictHostKeyChecking=no root@"${IP}" IP=${IP} IP_LIST_OF_CLUSTER=${IP_LIST_OF_CLUSTER} SCOPE_NAME=${SCOPE_NAME} DATA_PATH=${DATA_PATH} WAL_PATH=${WAL_PATH} DSC_ROOT_PATH=${DSC_ROOT_PATH} PG_PORT=${PG_PORT} ETCD_PASSWORD=${ETCD_PASSWORD} REPLICATION_USER_PASSWORD=${REPLICATION_USER_PASSWORD} PG_SUPER_USER_PASSWORD=${PG_SUPER_USER_PASSWORD} PG_BACKREST_USER_PASSWORD=${PG_BACKREST_USER_PASSWORD} 2>> installPG11Cluster.log 'bash -s' <<-'ENDSSH'
+    /root/installPG11Cluster -n "NOT_NEED" -p ${IP_LIST_OF_CLUSTER} -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -g ${ETCD_PASSWORD} -t ${REPLICATION_USER_PASSWORD} -y ${PG_SUPER_USER_PASSWORD} -u ${PG_BACKREST_USER_PASSWORD} -x 1
     if [[ $? -eq 0 ]]; then
             echo "system..install....."${GREEN}"OK${NORMAL}";
         else
@@ -1271,9 +1271,9 @@ ENDSSH
   done
 
 
-  /root/installPGCluster -n "NOT_NEED" -p ${IP_LIST_OF_CLUSTER} -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -g ${ETCD_PASSWORD}  -t ${REPLICATION_USER_PASSWORD} -y ${PG_SUPER_USER_PASSWORD} -u ${PG_BACKREST_USER_PASSWORD} -x 2
+  /root/installPG11Cluster -n "NOT_NEED" -p ${IP_LIST_OF_CLUSTER} -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -g ${ETCD_PASSWORD}  -t ${REPLICATION_USER_PASSWORD} -y ${PG_SUPER_USER_PASSWORD} -u ${PG_BACKREST_USER_PASSWORD} -x 2
   checkCommandStatus
-  /root/installPGCluster -n "NOT_NEED" -p ${IP_LIST_OF_CLUSTER} -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -g ${ETCD_PASSWORD}  -t ${REPLICATION_USER_PASSWORD} -y ${PG_SUPER_USER_PASSWORD} -u ${PG_BACKREST_USER_PASSWORD} -x 3
+  /root/installPG11Cluster -n "NOT_NEED" -p ${IP_LIST_OF_CLUSTER} -s "${SCOPE_NAME}" -d "${DATA_PATH}" -w "${WAL_PATH}" -e "${DSC_ROOT_PATH}" -k "${PG_PORT}" -g ${ETCD_PASSWORD}  -t ${REPLICATION_USER_PASSWORD} -y ${PG_SUPER_USER_PASSWORD} -u ${PG_BACKREST_USER_PASSWORD} -x 3
   checkCommandStatus
 
 }
