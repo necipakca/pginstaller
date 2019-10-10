@@ -17,11 +17,11 @@ PostgreSQL HA Cluster Installer For CentOS
         -u optinal- pgBackRest User(pgbackrest) Password
 
 # Example Usage
-        ./installPGCluster -n "rootPassword" -p 172.16.242.129,172.16.242.130,172.16.242.131 -s MY_PROD_CLS -e PG11_MY_PROD_CLS -k 5432 -d /dev/sdb -w /dev/sdc
+        ./installPG11Cluster -n "rootPassword" -p 172.16.242.129,172.16.242.130,172.16.242.131 -s MY_PROD_CLS -e PG11_MY_PROD_CLS -k 5432 -d /dev/sdb -w /dev/sdc
     
     
     
     
 # Compile to Portable Binary
-        shc -rf installPGCluster.sh -o installPGCluster
+        shc -rf installPG11Cluster.sh -o installPG11Cluster
         

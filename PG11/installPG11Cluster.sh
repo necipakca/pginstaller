@@ -923,6 +923,8 @@ bootstrap:
     synchronous_mode: false
     synchronous_mode_strict: false
     postgresql:
+      basebackup:
+        - waldir: PG_WAL_PATH
       use_pg_rewind: true
       use_slots: true
       parameters:
@@ -968,7 +970,6 @@ bootstrap:
         wal_keep_segments: 64
         max_replication_slots: 10
         track_commit_timestamp: on
-#        synchronous_standby_names: "first 1 ({{ node1_safe_hostname }}, {{ node2_safe_hostname }}, {{ node3_safe_hostname }})"
         hot_standby: "on"
         hot_standby_feedback: "on"
         effective_cache_size: 512MB
