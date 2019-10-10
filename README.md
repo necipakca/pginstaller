@@ -1,5 +1,5 @@
 # pginstaller
-PostgreSQL HA Cluster Installer For CentOS
+PostgreSQL HA Cluster Installer For CentOS 7.x
 
 # Usage
         -n required- root user password. Remember all machines have to have SAME root password. You can change passwords or disable root login recommended after installation finished.
@@ -17,7 +17,7 @@ PostgreSQL HA Cluster Installer For CentOS
         -u optinal- pgBackRest User(pgbackrest) Password
 
 # Example Usage
-        ./installPG11Cluster -n "rootPassword" -p 172.16.242.129,172.16.242.130,172.16.242.131 -s MY_PROD_CLS -e PG11_MY_PROD_CLS -k 5432 -d /dev/sdb -w /dev/sdc
+        ./installPG12Cluster -n "rootPassword" -p 172.16.242.129,172.16.242.130,172.16.242.131 -s MY_PROD_CLS -e PG11_MY_PROD_CLS -k 5432 -d /dev/sdb -w /dev/sdc
     
     
     
