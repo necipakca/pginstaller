@@ -57,7 +57,6 @@ function helpFunction(){
 
 
    echo -e "\t-k optinal- PostgreSQL port default : 5432"
-   echo -e "\t-b optinal- HaProxy(Balancer) Ip info e.g : 192.168.1.1 default is first IP of IP_LIST_OF_CLUSTER"
    echo -e "\t-d optinal- Data disk path e.g : /dev/sdb"
    echo -e "\t-w optinal- WAL  disk path e.g : /dev/sdc"
    echo -e "\t-e optinal- DCS root directory path. e.g. PG11_PROD_CLS.if you not provide default value is  PG_+ Scope Name"

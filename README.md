@@ -6,7 +6,6 @@ PostgreSQL HA Cluster Installer For CentOS 7.x
         -p required- IP list of cluster. Comma seperated IP list e.g : 192.168.1.1,192.168.1.2,192.168.1.3
         -s required- Scope Name e.g : PROD_CLS max 10 Alphetic charecter[a-Z]
         -k optinal- PostgreSQL port default : 5432
-        -b optinal- HaProxy(Balancer) Ip info e.g : 192.168.1.1 default is first IP of IP_LIST_OF_CLUSTER
         -d optinal- Data disk path e.g : /dev/sdb
         -w optinal- WAL  disk path e.g : /dev/sdc
         -e optinal- DCS root directory path. e.g. PG11_PROD_CLS.if you not provide default value is  PG_+ Scope Name
