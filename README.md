@@ -64,10 +64,10 @@ Example,
 
 Review your PostgreSQL HA Cluster configuration
 
-patronictl -c /etc/patroni_${SCOPE_NAME}.yml edit-config
+**patronictl -c /etc/patroni_${SCOPE_NAME}.yml edit-config**
 
 
-For more about configuration read Patroni github page.
+_For more about configuration read Patroni github page._
 
 
 # Example connection
