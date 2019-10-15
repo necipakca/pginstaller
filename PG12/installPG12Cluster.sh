@@ -922,6 +922,9 @@ bootstrap:
     synchronous_mode: false
     synchronous_mode_strict: false
     postgresql:
+      pg_hba:
+        - host replication replica_user 0.0.0.0/0 md5
+        - host all all 0.0.0.0/0 md5
       basebackup:
         - waldir: PG_WAL_PATH
       use_pg_rewind: true

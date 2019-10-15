@@ -5,7 +5,7 @@ These program installs PostgreSQL HA Cluster with Patroni in 10 minutes for new 
 
 **IMPORTANT**
 
-_**Do not use these program for your existing setup or upgrade your servers. You can lost your data be careful.**_
+_**Do not use these program for your existing setup or upgrade your servers. You can lost your data be careful. pgInstaller well tested on just new servers.**_
 
 # Before Installation
 
@@ -21,12 +21,12 @@ _**Do not use these program for your existing setup or upgrade your servers. You
         -k optinal- PostgreSQL port default : 5432
         -d optinal- Data disk path e.g : /dev/sdb
         -w optinal- WAL  disk path e.g : /dev/sdc
-        -e optinal- DCS root directory path. e.g. PG11_PROD_CLS.if you not provide default value is  PG_+ Scope Name
+        -e optinal- DCS root directory path. e.g. PG11_PROD_CLS.if you not provide default value is  "PG_+ Scope Name"
         -v optinal- More output default for open add : -v:ON 
-        -g optinal- Etcd Password (If you not the program generate for you and save it in PgInstallerPass.txt file)
-        -t optinal- Postgres Replication User Password (If you not the program generate for you and save it in PgInstallerPass.txt file)
-        -y optinal- Postgres Super User(postgres) Password (If you not the program generate for you and save it in PgInstallerPass.txt file)
-        -u optinal- pgBackRest User(pgbackrest) Password (If you not the program generate for you and save it in PgInstallerPass.txt file)
+        -g optinal- Etcd Password (If you not provide the program generate for you and save it in PgInstallerPass.txt file)
+        -t optinal- Postgres Replication User Password (If you not provide the program generate for you and save it in PgInstallerPass.txt file)
+        -y optinal- Postgres Super User(postgres) Password (If you not provide the program generate for you and save it in PgInstallerPass.txt file)
+        -u optinal- pgBackRest User(pgbackrest) Password (If you not provide the program generate for you and save it in PgInstallerPass.txt file)
 
 # Example Usage
         ./installPG12Cluster -n "1" -p 172.16.242.129,172.16.242.130,172.16.242.131 -s BELGE_CLS -e PG12_BELGE_CLS -k 5432 -d /dev/sdb -w /dev/sdc -g 1a23 -t 1a23 -y 1a23 -u 1a23
@@ -62,6 +62,12 @@ Example,
 - firewall-cmd --permanent --zone=public --add-rich-rule="rule family=ipv4 source address=${YOUR APP SERVER IP}/32 port protocol=tcp port=5432 accept"
 - systemctl restart firewalld
 
+Review your PostgreSQL HA Cluster configuration
+
+patronictl -c /etc/patroni_${SCOPE_NAME}.yml edit-config
+For more about configuration read Patroni github page.
+
+
 # Example connection
 
 ● Using jdbc:
@@ -76,5 +82,5 @@ postgresql://host1:port2,host2:port2/?target_session_attrs=read-write
  
 # Waiting Features 
  * Backup server installation option will be added with pg_BackRest 
- * pg_watch2  installation will be added 
+ * pg_watch2  installation will be added.
  

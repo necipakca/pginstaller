@@ -926,6 +926,9 @@ bootstrap:
         - waldir: PG_WAL_PATH
       use_pg_rewind: true
       use_slots: true
+      pg_hba:
+        - host replication replica_user 0.0.0.0/0 md5
+        - host all all 0.0.0.0/0 md5
       parameters:
         max_connections: 300
         superuser_reserved_connections: 50
