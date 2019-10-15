@@ -67,7 +67,7 @@ Review your PostgreSQL HA Cluster configuration
 **patronictl -c /etc/patroni_${SCOPE_NAME}.yml edit-config**
 
 
-_For more about configuration read Patroni github page._
+_For more about cluster configuration read Patroni github page._
 
 
 # Example connection
