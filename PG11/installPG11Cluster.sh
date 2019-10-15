@@ -247,11 +247,6 @@ ENDSSH
 }
 
 checkInternetConnections(){
-    checkCommandStatus $(ssh -q -oStrictHostKeyChecking=no root@$1 IP=${1}  2>> installPG11Cluster.log  'bash -s' <<-'ENDSSH'
-        curl -s --head https://bootstrap.pypa.io/get-pip.py | head -n 1 | grep "HTTP/1.[01] [23].." > /dev/null
-        echo "${IP}:    Checking server can access the url https://bootstrap.pypa.io/get-pip.py.c for pip install"
-ENDSSH
-    )
 
     checkCommandStatus $(ssh -q -oStrictHostKeyChecking=no root@$1 IP=${1}  2>> installPG11Cluster.log  'bash -s' <<-'ENDSSH'
         curl -s --head https://yum.postgresql.org/11/redhat/rhel-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm | head -n 1 | grep "HTTP/1.[01] [23].." > /dev/null
@@ -496,23 +491,6 @@ CentOsPacksInstallerAndKernel(){
     systemctl start ntpd.service
     checkCommandStatus "Start ntpd service"
 
-
-    yum -y install python python-devel libyaml  >&-
-    checkCommandStatus "Install sshpass python"
-
-    # Python PIP install
-    wget -q --output-document="./get-pip.py" https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
-    checkCommandStatus "Download PIP"
-    sudo python ./get-pip.py  >&-
-    checkCommandStatus "Installing python PIP"
-    rm ./get-pip.py
-
-    install_ssh_id_to_all_servers postgres ${PG_SUPER_USER_PASSWORD}
-    checkCommandStatus "Installing postgres os user"
-    install_ssh_id_to_all_servers pgbackrest ${PG_BACKREST_USER_PASSWORD}
-    checkCommandStatus "Installing pgbackrest os use"
-
-
     # Postgres server repo add
     # TODO  NOT WORK check later   yum install http://download.postgresql.org/pub/repos/yum/11/redhat/rhel-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm
     wget -q --output-document="./pgdg-redhat-repo-latest.noarch.rpm" http://download.postgresql.org/pub/repos/yum/11/redhat/rhel-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm
@@ -521,12 +499,25 @@ CentOsPacksInstallerAndKernel(){
     rm ./pgdg-redhat-repo-latest.noarch.rpm
 
 
+    yum -y install python python-devel python2-pip libyaml python2-psycopg2 >&-
+    checkCommandStatus "Install sshpass python"
+
+    pip install --upgrade pip >&-
+    checkCommandStatus "PIP Upgrade ..."
+    pip install setuptools --upgrade -q
+    checkCommandStatus "setuptools Upgrade ..."
+
+    install_ssh_id_to_all_servers postgres ${PG_SUPER_USER_PASSWORD}
+    checkCommandStatus "Installing postgres os user"
+    install_ssh_id_to_all_servers pgbackrest ${PG_BACKREST_USER_PASSWORD}
+    checkCommandStatus "Installing pgbackrest os use"
+
     # Postgres install to server
     sudo yum groupinstall "PostgreSQL Database Server 11 PGDG" -y >&-
     checkCommandStatus "Installing PostgreSQL Database Server 11 PGDG"
     # Postgres tools install
-    sudo yum install postgresql11-plpython pg_activity pgbadger pg_stat_kcache11 pgaudit13_11 pg_qualstats11 pg_squeeze11 timescaledb_11 cstore_fdw_11 citus_11 pgbackrest -y  >&-
-    checkCommandStatus "Installing pg_activity pg_badger"
+    sudo yum install postgresql11-plpython pgbadger pg_stat_kcache11 pgaudit13_11 pg_qualstats11 pg_squeeze11 timescaledb_11 cstore_fdw_11 citus_11 pgbackrest -y  >&-
+    checkCommandStatus "Installing pg_badger"
 
 
     sed -i -e 's#SELINUX=enforcing#'"SELINUX=disabled"'#g' /etc/selinux/config;
@@ -927,8 +918,14 @@ bootstrap:
       use_pg_rewind: true
       use_slots: true
       pg_hba:
-        - host replication replica_user 0.0.0.0/0 md5
-        - host all all 0.0.0.0/0 md5
+        - local   all    all    peer
+        - host    all    all    127.0.0.1/32    ident
+        - host    all    all    ::1/128         ident
+        - local   replication    all    peer
+        - host    replication    all    127.0.0.1/32    ident
+        - host    replication    all   ::1/128   ident
+        - host    replication    replica_user    0.0.0.0/0    md5
+        - host    all    all    0.0.0.0/0    md5
       parameters:
         max_connections: 300
         superuser_reserved_connections: 50
@@ -1010,9 +1007,9 @@ bootstrap:
     - lc-collate: tr_TR.utf8
     - lc-ctype: tr_TR.utf8
 
-  pg_hba:
-   - host replication replica_user 0.0.0.0/0 md5
-   - host all all 0.0.0.0/0 md5
+#  pg_hba:
+#   - host replication replica_user 0.0.0.0/0 md5
+#   - host all all 0.0.0.0/0 md5
 #  - host    replication     replica_user    {{ node1_replication_addr }}/32       trust
 #  - host    replication     replica_user    {{ node2_replication_addr }}/32       trust
 #  - host    replication     replica_user    {{ node3_replication_addr }}/32       trust
@@ -1317,44 +1314,3 @@ else
     echo "Not Supported OS Type Only CentOS 7.5 and upper supported"
     exit -902
 fi
-
-
-install_influxdb(){
-
-    cat <<EOF | sudo tee /etc/yum.repos.d/influxdb.repo
-[influxdb]
-name = InfluxDB Repository - RHEL \$releasever
-baseurl = https://repos.influxdata.com/rhel/\$releasever/\$basearch/stable
-enabled = 1
-gpgcheck = 1
-gpgkey = https://repos.influxdata.com/influxdb.key
-EOF
-    sudo yum makecache fast
-    sudo yum -y install influxdb vim curl
-    sudo systemctl start influxdb && sudo systemctl enable influxdb
-
-    sudo firewall-cmd --add-port=8086/tcp --permanent
-    sudo firewall-cmd --reload
-}
-
-install_grafana(){
-
-    cat <<EOF | sudo tee /etc/yum.repos.d/grafana.repo
-[grafana]
-name=grafana
-baseurl=https://packages.grafana.com/oss/rpm
-repo_gpgcheck=1
-enabled=1
-gpgcheck=1
-gpgkey=https://packages.grafana.com/gpg.key
-sslverify=1
-sslcacert=/etc/pki/tls/certs/ca-bundle.crt
-EOF
-
-    sudo yum -y install grafana
-    sudo systemctl start grafana-server
-    sudo systemctl enable grafana-server
-
-    sudo firewall-cmd --add-port=3000/tcp --permanent
-    sudo firewall-cmd --reload
-}
