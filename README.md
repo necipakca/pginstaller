@@ -65,6 +65,8 @@ Example,
 Review your PostgreSQL HA Cluster configuration
 
 patronictl -c /etc/patroni_${SCOPE_NAME}.yml edit-config
+
+
 For more about configuration read Patroni github page.
 
 
