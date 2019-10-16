@@ -12,22 +12,22 @@ _**Do not use these program for your existing setup or upgrade your servers. You
 * Check all candidate servers has same root password. 
 * Check default yum repos (sudo yum update) is reachable.
 * Check https://yum.postgresql.org/        is reachable.
-* Optinal add sperate disks for WAL and DATA for production env.
+* optional add sperate disks for WAL and DATA for production env.
 
 
 # Usage
         -n required- root user password. Remember all machines have to have SAME root password. You can change passwords or disable root login recommended after installation finished.
         -p required- IP list of cluster. Comma seperated IP list e.g : 192.168.1.1,192.168.1.2,192.168.1.3
         -s required- Scope Name e.g : PROD_CLS max 10 Alphetic charecter[a-Z]
-        -k optinal- PostgreSQL port default : 5432
-        -d optinal- Data disk path e.g : /dev/sdb
-        -w optinal- WAL  disk path e.g : /dev/sdc
-        -e optinal- DCS root directory path. e.g. PG11_PROD_CLS.if you not provide default value is  "PG_+ Scope Name"
-        -v optinal- More output default for open add : -v:ON 
-        -g optinal- Etcd Password (If you not provide the program generate for you and save it in PgInstallerPass.txt file)
-        -t optinal- Postgres Replication User Password (If you not provide the program generate for you and save it in PgInstallerPass.txt file)
-        -y optinal- Postgres Super User(postgres) Password (If you not provide the program generate for you and save it in PgInstallerPass.txt file)
-        -u optinal- pgBackRest User(pgbackrest) Password (If you not provide the program generate for you and save it in PgInstallerPass.txt file)
+        -k optional- PostgreSQL port default : 5432
+        -d optional- Data disk path e.g : /dev/sdb
+        -w optional- WAL  disk path e.g : /dev/sdc
+        -e optional- DCS root directory path. e.g. PG11_PROD_CLS.if you not provide default value is  "PG_+ Scope Name"
+        -v optional- More output default for open add : -v:ON 
+        -g optional- Etcd Password (If you not provide the program generate for you and save it in PgInstallerPass.txt file)
+        -t optional- Postgres Replication User Password (If you not provide the program generate for you and save it in PgInstallerPass.txt file)
+        -y optional- Postgres Super User(postgres) Password (If you not provide the program generate for you and save it in PgInstallerPass.txt file)
+        -u optional- pgBackRest User(pgbackrest) Password (If you not provide the program generate for you and save it in PgInstallerPass.txt file)
 
 # Example Usage
         ./installPG11Cluster -n "1" -p 172.16.242.129,172.16.242.130,172.16.242.131 -s AKCA_CLS -e PG11_AKCA_CLS -k 5432 -d /dev/sdb -w /dev/sdc -g 1a23 -t 1a23 -y 1a23 -u 1a23
@@ -39,7 +39,7 @@ _**Do not use these program for your existing setup or upgrade your servers. You
 # Tuned Kernel & Conf Files
 
 These files will be tuned or added to your server.
-After succesfully install your PostgreSQL HA cluster we strongly recommend review these files.
+After successfully install your PostgreSQL HA cluster we strongly recommend review these files.
 
 
 * /etc/tuned/postgresql-tuned/tuned.conf
