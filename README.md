@@ -1,5 +1,5 @@
 # pginstaller
-PostgreSQL 11/12 HA Cluster Installer For CentOS 7.x
+PostgreSQL 11 HA Cluster Installer For CentOS 7.x
 These program installs PostgreSQL HA Cluster with Patroni in 10 minutes for new servers.
 
 
@@ -7,11 +7,12 @@ These program installs PostgreSQL HA Cluster with Patroni in 10 minutes for new 
 
 _**Do not use these program for your existing setup or upgrade your servers. You can lost your data be careful. pgInstaller well tested on just new servers.**_
 
-# Before Installation
-
-* Check default yum repo (sudo yum update) is reachable.
-* Check https://bootstrap.pypa.io          is reachable.
+# Requirements
+* New installed CentOS 7.x servers (min 3 servers suggested) and root user enabled.
+* Check all candidate servers has same root password. 
+* Check default yum repos (sudo yum update) is reachable.
 * Check https://yum.postgresql.org/        is reachable.
+* Optinal add sperate disks for WAL and DATA for production env.
 
 
 # Usage
@@ -29,10 +30,10 @@ _**Do not use these program for your existing setup or upgrade your servers. You
         -u optinal- pgBackRest User(pgbackrest) Password (If you not provide the program generate for you and save it in PgInstallerPass.txt file)
 
 # Example Usage
-        ./installPG12Cluster -n "1" -p 172.16.242.129,172.16.242.130,172.16.242.131 -s BELGE_CLS -e PG12_BELGE_CLS -k 5432 -d /dev/sdb -w /dev/sdc -g 1a23 -t 1a23 -y 1a23 -u 1a23
+        ./installPG11Cluster -n "1" -p 172.16.242.129,172.16.242.130,172.16.242.131 -s AKCA_CLS -e PG11_AKCA_CLS -k 5432 -d /dev/sdb -w /dev/sdc -g 1a23 -t 1a23 -y 1a23 -u 1a23
     
 # Compile to Portable Binary
-        shc -rf installPG12Cluster.sh -o installPG12Cluster
+        shc -rf installPG11Cluster.sh -o installPG11Cluster
         
         
 # Tuned Kernel & Conf Files
@@ -56,13 +57,15 @@ After succesfully install your PostgreSQL HA cluster we strongly recommend revie
 
 # After Installation 
 
-The default servers firewalls are open so you have to open PostgreSQL port for connect from your app server/s. For accessing to database run these commands on all servers which is you provide during to installation with -p command. ;
+* It is recomended disable all root user's from your servers.
+
+* The default servers firewalls are open so you have to open PostgreSQL port for connect from your app server/s. For accessing to database run these commands on all servers which is you provide during to installation with -p command. ;
 
 Example,
 - firewall-cmd --permanent --zone=public --add-rich-rule="rule family=ipv4 source address=${YOUR APP SERVER IP}/32 port protocol=tcp port=5432 accept"
 - systemctl restart firewalld
 
-Review your PostgreSQL HA Cluster configuration
+* Review your PostgreSQL HA Cluster configuration
 
 **patronictl -c /etc/patroni_${SCOPE_NAME}.yml edit-config**
 
@@ -83,6 +86,6 @@ postgresql://host1:port2,host2:port2/?target_session_attrs=read-write
 ● For more balancer vs ... read Patroni github page.
  
 # Waiting Features 
- * Backup server installation option will be added with pg_BackRest 
+ * Backup server installation option will be added with pg_BackRest. 
  * pg_watch2  installation will be added.
  
