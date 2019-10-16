@@ -12,11 +12,11 @@ _**Do not use these program for your existing setup or upgrade your servers. You
 * Check all candidate servers has same root password. 
 * Check default yum repos (sudo yum update) is reachable.
 * Check https://yum.postgresql.org/        is reachable.
-* optional add sperate disks for WAL and DATA for production env.
+* optional add sperate disks for WAL and DATA (but do not mount disks!!) for production env.
 
 
 # Usage
-        -n required- root user password. Remember all machines have to have SAME root password. You can change passwords or disable root login recommended after installation finished.
+        -n required- root user password. Remember all machines should have SAME root password. You can change passwords or disable root login recommended after installation finished.
         -p required- IP list of cluster. Comma seperated IP list e.g : 192.168.1.1,192.168.1.2,192.168.1.3
         -s required- Scope Name e.g : PROD_CLS max 10 Alphetic charecter[a-Z]
         -k optional- PostgreSQL port default : 5432
@@ -57,7 +57,7 @@ After successfully install your PostgreSQL HA cluster we strongly recommend revi
 
 # After Installation 
 
-* It is recomended disable all root user's from your servers.
+* It is recommended disable all root user's from your servers.
 
 * The default servers firewalls are open so you have to open PostgreSQL port for connect from your app server/s. For accessing to database run these commands on all servers which is you provide during to installation with -p command. ;
 
@@ -86,6 +86,7 @@ postgresql://host1:port2,host2:port2/?target_session_attrs=read-write
 ● For more balancer vs ... read Patroni github page.
  
 # Waiting Features 
+
  * Backup server installation option will be added with pg_BackRest. 
  * pg_watch2  installation will be added.
  
