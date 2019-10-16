@@ -18,7 +18,7 @@ _**Do not use these program for your existing setup or upgrade your servers. You
 # Usage
         -n required- root user password. Remember all machines should have SAME root password. You can change passwords or disable root login recommended after installation finished.
         -p required- IP list of cluster. Comma seperated IP list e.g : 192.168.1.1,192.168.1.2,192.168.1.3
-        -s required- Scope Name e.g : PROD_CLS max 10 Alphetic charecter[a-Z]
+        -s required- Scope Name e.g : PROD_CLS max 10 alphabetic charecter[a-Z]
         -k optional- PostgreSQL port default : 5432
         -d optional- Data disk path e.g : /dev/sdb
         -w optional- WAL  disk path e.g : /dev/sdc
