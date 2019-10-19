@@ -1,18 +1,18 @@
 # pginstaller
 PostgreSQL 11 HA Cluster Installer For CentOS 7.x
-These program installs PostgreSQL HA Cluster with Patroni in 10 minutes for new servers.
+This program installs PostgreSQL HA Cluster with Patroni in 10 minutes for new servers.
 
 
 **IMPORTANT**
 
-_**Do not use these program for your existing setup or upgrade your servers. You can lost your data be careful. pgInstaller well tested on just new servers.**_
+_**Do not use these program for your existing setup or upgrade your servers. You can lose your data be careful. pgInstaller well tested on just new servers.**_
 
 # Requirements
 * New installed CentOS 7.x servers (min 3 servers suggested) and root user enabled.
 * Check all candidate servers has same root password. 
 * Check default yum repos (sudo yum update) is reachable.
 * Check https://yum.postgresql.org/        is reachable.
-* optional add sperate disks for WAL and DATA (but do not mount disks!!) for production env.
+* optional add seperate disks for WAL and DATA (but do not mount disks!!) for production env.
 
 
 # Usage
