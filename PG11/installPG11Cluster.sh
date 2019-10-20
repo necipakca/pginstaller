@@ -1287,7 +1287,6 @@ if [[ -f "/etc/centos-release" ]]; then
 
     if [[ -z ${RUN_LEVEL} ]] ;then
         bannerWithoutTime "PosgreSQL  11  HA  Cluster  Installer"
-        bannerWithoutTime "© All Rights Reserved by TURKSAT A.S."
         validate_env "${IP_LIST_OF_CLUSTER}"
         checkCommandStatus
         cent_os_env_installer "${IP_LIST_OF_CLUSTER}"
